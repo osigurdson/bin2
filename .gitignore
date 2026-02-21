@@ -24,6 +24,12 @@ coverage.out
 # Local compiled binaries
 cmd/init/init
 cmd/api/api
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.o
 
 # Next.js / Node artifacts
 ui/node_modules/
