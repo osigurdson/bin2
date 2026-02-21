@@ -1,0 +1,20 @@
+# Node dependencies
+node_modules/
+
+# Wrangler local state
+.wrangler/
+
+# Local secrets/env
+.dev.vars
+.env
+.env.*
+!.env.example
+
+# Logs and temp files
+*.log
+*.tmp
+
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/

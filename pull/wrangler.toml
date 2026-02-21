@@ -1,0 +1,11 @@
+name = "bin2-pull"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+REGISTRY_SERVICE = "localhost:5000"
+REGISTRY_TOKEN_REALM = "http://localhost:5000/v2/token"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "bin2"

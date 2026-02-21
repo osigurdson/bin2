@@ -39,6 +39,10 @@ ui/build/
 ui/.vercel/
 ui/next-env.d.ts
 ui/*.tsbuildinfo
+pull/node_modules/
+pull/.wrangler/
+pull/.dev.vars
+pull/.env
 
 # Local registry storage
 registry-data/
