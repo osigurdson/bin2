@@ -26,4 +26,9 @@ func (s *Server) addRoutes() {
 	api.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+
+	registries := api.Group("/registries")
+	registries.Use(s.authMiddleware())
+	registries.GET("", s.listRegistriesHandler)
+	registries.POST("", s.addRegistryHandler)
 }
