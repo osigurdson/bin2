@@ -31,4 +31,10 @@ func (s *Server) addRoutes() {
 	registries.Use(s.authMiddleware())
 	registries.GET("", s.listRegistriesHandler)
 	registries.POST("", s.addRegistryHandler)
+
+	apikeys := api.Group("/api-keys")
+	apikeys.Use(s.authMiddleware())
+	apikeys.POST("", s.addAPIKeyHandler)
+	apikeys.GET("", s.listAPIKeysHandler)
+	apikeys.DELETE(":id", s.removeAPIKeyHandler)
 }
