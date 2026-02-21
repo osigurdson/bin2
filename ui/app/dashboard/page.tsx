@@ -9,7 +9,7 @@ import {
   useUser,
 } from "@clerk/nextjs";
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { SyntheticEvent, useEffect, useState } from "react";
 
 type Registry = {
   id: string;
@@ -21,6 +21,26 @@ type ListRegistriesResponse = {
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000";
+
+function RegistryCommandPreview({ name }: { name: string }) {
+  const trimmed = name.trim();
+  const hasName = trimmed !== "";
+  const displayName = hasName ? trimmed : "{their-name}";
+
+  return (
+    <div className={`dashboard-preview${hasName ? " is-live" : ""}`}>
+      <p className="dashboard-preview-title">
+        {hasName ? "Live command preview:" : "Use these commands:"}
+      </p>
+      <code className="dashboard-command">
+        docker push push.bin2.io/{displayName}
+      </code>
+      <code className="dashboard-command">
+        docker pull bin2.io/{displayName}
+      </code>
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   const { isLoaded, user } = useUser();
@@ -81,7 +101,7 @@ export default function DashboardPage() {
     };
   }, [getToken, isLoaded, user?.id]);
 
-  const handleCreateRegistry = async (e: FormEvent<HTMLFormElement>) => {
+  const handleCreateRegistry = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!user) {
       return;
@@ -132,7 +152,7 @@ export default function DashboardPage() {
 
   if (!isLoaded) {
     return (
-      <main className="container" style={{ paddingTop: "3rem" }}>
+      <main className="container dashboard-main">
         <h1>Dashboard</h1>
         <p>Loading session...</p>
       </main>
@@ -142,7 +162,7 @@ export default function DashboardPage() {
   return (
     <>
       <SignedOut>
-        <main className="container" style={{ paddingTop: "3rem" }}>
+        <main className="container dashboard-main">
           <h1>Dashboard</h1>
           <p>Redirecting to sign in...</p>
           <RedirectToSignIn />
@@ -150,7 +170,7 @@ export default function DashboardPage() {
       </SignedOut>
 
       <SignedIn>
-        <main className="container" style={{ paddingTop: "3rem" }}>
+        <main className="container dashboard-main">
           <h1>Dashboard</h1>
           <p>
             Signed in as{" "}
@@ -160,40 +180,42 @@ export default function DashboardPage() {
           {isCheckingRegistries ? (
             <p>Checking your registries...</p>
           ) : registries.length === 0 ? (
-            <form
-              onSubmit={handleCreateRegistry}
-              style={{
-                marginTop: "1rem",
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.75rem",
-                maxWidth: "420px",
-              }}
-            >
-              <p>You do not have a registry yet. Choose a registry name:</p>
+            <form onSubmit={handleCreateRegistry} className="dashboard-onboarding-card">
+              <p className="dashboard-onboarding-copy">
+                You do not have a registry yet. Choose a registry name:
+              </p>
+              <label htmlFor="registry-name" className="dashboard-field-label">
+                New Registry Name
+              </label>
               <input
+                id="registry-name"
                 type="text"
                 value={registryName}
                 onChange={(e) => setRegistryName(e.target.value)}
                 placeholder="my-registry"
                 autoComplete="off"
+                className="dashboard-field-input"
               />
-              <button type="submit" disabled={isCreatingRegistry}>
+              <RegistryCommandPreview name={registryName} />
+              <button type="submit" disabled={isCreatingRegistry} className="dashboard-primary-btn">
                 {isCreatingRegistry ? "Creating..." : "Create registry"}
               </button>
             </form>
           ) : (
-            <div style={{ marginTop: "1rem" }}>
+            <div className="dashboard-section">
               <p>Registry: {registries[0]?.name}</p>
+              <RegistryCommandPreview name={registries[0]?.name ?? ""} />
             </div>
           )}
 
-          {error ? <p style={{ marginTop: "0.75rem" }}>{error}</p> : null}
+          {error ? <p className="dashboard-error">{error}</p> : null}
 
-          <p style={{ marginTop: "1rem", display: "flex", gap: "0.75rem" }}>
+          <p className="dashboard-link-row">
             <Link href="/">Back to landing</Link>
             <SignOutButton>
-              <button type="button">Sign out</button>
+              <button type="button" className="dashboard-secondary-btn">
+                Sign out
+              </button>
             </SignOutButton>
           </p>
         </main>

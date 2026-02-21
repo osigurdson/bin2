@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./tailwind.css";
-import "./globals.css";
+import "./root.css";
 import "./marketing.css";
+import "./dashboard.css";
 
 export const metadata: Metadata = {
   title: "bin2 - Container Registry",

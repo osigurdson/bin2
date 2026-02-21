@@ -1,0 +1,112 @@
+.dashboard-main {
+  padding-top: 3rem;
+}
+
+.dashboard-section {
+  margin-top: 1rem;
+}
+
+.dashboard-onboarding-card {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  max-width: 560px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.dashboard-onboarding-copy {
+  margin: 0;
+}
+
+.dashboard-field-label {
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+  font-weight: 700;
+}
+
+.dashboard-field-input {
+  padding: 0.72rem 0.82rem;
+  border: 2px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-3);
+  font-size: 1rem;
+  outline: none;
+  transition: box-shadow 160ms ease;
+}
+
+.dashboard-field-input:focus {
+  box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.15);
+}
+
+.dashboard-primary-btn {
+  align-self: flex-start;
+  padding: 0.7rem 1rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--color-accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.dashboard-primary-btn:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.dashboard-preview {
+  margin-top: 0.75rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-2);
+  padding: 0.875rem;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: all 180ms ease;
+}
+
+.dashboard-preview.is-live {
+  background: var(--surface-live);
+}
+
+.dashboard-preview-title {
+  margin: 0;
+  font-weight: 700;
+}
+
+.dashboard-command {
+  display: block;
+  background: var(--surface-3);
+  border: 1px solid var(--border-soft);
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  transition: all 160ms ease;
+}
+
+.dashboard-preview.is-live .dashboard-command {
+  border-color: var(--border-live);
+}
+
+.dashboard-error {
+  margin-top: 0.75rem;
+}
+
+.dashboard-link-row {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.75rem;
+}
+
+.dashboard-secondary-btn {
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-3);
+  cursor: pointer;
+}
