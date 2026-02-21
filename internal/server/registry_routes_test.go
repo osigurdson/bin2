@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -27,7 +28,7 @@ func TestRegistryV2RequiresAuth(t *testing.T) {
 	if got := res.Header().Get("Docker-Distribution-API-Version"); got != "registry/2.0" {
 		t.Fatalf("Docker-Distribution-API-Version = %q", got)
 	}
-	if got := res.Header().Get("WWW-Authenticate"); got != `Basic realm="registry"` {
+	if got := res.Header().Get("WWW-Authenticate"); !strings.HasPrefix(got, `Bearer realm=`) {
 		t.Fatalf("WWW-Authenticate = %q", got)
 	}
 }

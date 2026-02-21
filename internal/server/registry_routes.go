@@ -10,7 +10,7 @@ import (
 func (s *Server) addRegistryRoutes() {
 	v2Middlewares := []gin.HandlerFunc{
 		s.apiVersionMiddleware(),
-		s.registryAuthMiddleware(),
+		s.registryBearerAuthMiddleware(),
 	}
 	s.router.Any("/v2", append(v2Middlewares, s.v2RootHandler)...)
 
@@ -31,6 +31,10 @@ func (s *Server) v2Handler(c *gin.Context) {
 	relative := strings.TrimPrefix(c.Param("path"), "/")
 	if relative == "" || relative == "/" {
 		s.v2RootHandler(c)
+		return
+	}
+	if isRegistryTokenPath(relative) {
+		s.registryTokenHandler(c)
 		return
 	}
 

@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
+	"strings"
 
 	"bin2.io/internal/db"
 	"github.com/clerk/clerk-sdk-go/v2"
@@ -15,6 +17,8 @@ type Server struct {
 	router          *gin.Engine
 	db              *db.DB
 	registryStorage registryStorage
+	registryJWTKey  string
+	registryService string
 }
 
 func New() (*Server, error) {
@@ -48,6 +52,12 @@ func New() (*Server, error) {
 		router:          gin.Default(),
 		db:              conn,
 		registryStorage: rs,
+		registryJWTKey:  strings.TrimSpace(getenvDefault("REGISTRY_JWT_KEY", "")),
+		registryService: strings.TrimSpace(getenvDefault("REGISTRY_SERVICE", "")),
+	}
+	if s.registryJWTKey == "" {
+		s.registryJWTKey = "bin2-dev-registry-jwt-key"
+		slog.Warn("REGISTRY_JWT_KEY not set; using insecure development fallback key")
 	}
 	s.addRoutes()
 	return s, nil
