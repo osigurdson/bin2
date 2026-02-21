@@ -37,7 +37,14 @@ type ListAPIKeysResponse = {
   keys?: APIKey[];
 };
 
+type OnboardingSetup = {
+  registryName: string;
+  apiKeyName: string;
+  secretKey: string;
+};
+
 const keyNameRe = /^[A-Za-z0-9._-]{2,8}$/;
+const defaultOnboardingKeyNames = ["default", "main", "cli", "local"];
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000";
 
 function formatDate(ts: string | null): string {
@@ -82,7 +89,7 @@ export default function DashboardPage() {
   const { getToken } = useAuth();
 
   const [isCheckingRegistries, setIsCheckingRegistries] = useState(true);
-  const [isCreatingRegistry, setIsCreatingRegistry] = useState(false);
+  const [isCompletingOnboarding, setIsCompletingOnboarding] = useState(false);
   const [registries, setRegistries] = useState<Registry[]>([]);
   const [registryName, setRegistryName] = useState("");
   const [registryError, setRegistryError] = useState<string | null>(null);
@@ -97,6 +104,9 @@ export default function DashboardPage() {
   const [isSecretVisible, setIsSecretVisible] = useState(false);
   const [isSecretCopied, setIsSecretCopied] = useState(false);
 
+  const [onboardingSetup, setOnboardingSetup] = useState<OnboardingSetup | null>(null);
+  const [copiedCommandKey, setCopiedCommandKey] = useState<string | null>(null);
+
   const registryNamespace = registries[0]?.name ?? "";
   const registryForCommands = registryNamespace || "{your-registry}";
 
@@ -109,6 +119,16 @@ export default function DashboardPage() {
     }
     return `${newSecretKey.slice(0, 8)}••••••••`;
   }, [newSecretKey]);
+
+  const isOnboardingStep1 = !isCheckingRegistries && registries.length === 0 && !onboardingSetup;
+  const isOnboardingStep2 = onboardingSetup !== null;
+
+  const onboardingDockerLoginCommand = onboardingSetup
+    ? `docker login push.bin2.io -u ${onboardingSetup.registryName} -p '${onboardingSetup.secretKey}'`
+    : "";
+  const onboardingPodmanLoginCommand = onboardingSetup
+    ? `podman login push.bin2.io -u ${onboardingSetup.registryName} -p '${onboardingSetup.secretKey}'`
+    : "";
 
   useEffect(() => {
     if (!isLoaded || !user) {
@@ -207,6 +227,31 @@ export default function DashboardPage() {
     return null;
   };
 
+  const createDefaultOnboardingAPIKey = async (token: string): Promise<CreateAPIKeyResponse> => {
+    for (const candidateName of defaultOnboardingKeyNames) {
+      const response = await fetch(`${apiBaseUrl}/api/v1/api-keys`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ keyName: candidateName }),
+      });
+
+      if (response.status === 409) {
+        continue;
+      }
+
+      if (!response.ok) {
+        throw new Error(`api key create failed (${response.status})`);
+      }
+
+      return (await response.json()) as CreateAPIKeyResponse;
+    }
+
+    throw new Error("could not create onboarding API key");
+  };
+
   const handleCreateRegistry = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!user) {
@@ -219,8 +264,9 @@ export default function DashboardPage() {
       return;
     }
 
-    setIsCreatingRegistry(true);
+    setIsCompletingOnboarding(true);
     setRegistryError(null);
+    setAPIKeyError(null);
 
     try {
       const token = await getToken();
@@ -228,7 +274,7 @@ export default function DashboardPage() {
         throw new Error("missing clerk token");
       }
 
-      const res = await fetch(`${apiBaseUrl}/api/v1/registries`, {
+      const registryRes = await fetch(`${apiBaseUrl}/api/v1/registries`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -237,22 +283,38 @@ export default function DashboardPage() {
         body: JSON.stringify({ name }),
       });
 
-      if (res.status === 409) {
+      if (registryRes.status === 409) {
         setRegistryError("That registry name is already taken.");
         return;
       }
-      if (!res.ok) {
-        throw new Error(`registry create failed (${res.status})`);
+      if (!registryRes.ok) {
+        throw new Error(`registry create failed (${registryRes.status})`);
       }
 
-      const created = (await res.json()) as Registry;
-      setRegistries([created]);
+      const createdRegistry = (await registryRes.json()) as Registry;
+      setRegistries([createdRegistry]);
       setRegistryName("");
+
+      try {
+        const createdKey = await createDefaultOnboardingAPIKey(token);
+        setAPIKeys((previous) => [createdKey.apiKey, ...previous]);
+        setNewSecretKey(createdKey.secretKey);
+        setIsSecretVisible(false);
+        setIsSecretCopied(false);
+        setOnboardingSetup({
+          registryName: createdRegistry.name,
+          apiKeyName: createdKey.apiKey.keyName,
+          secretKey: createdKey.secretKey,
+        });
+      } catch (keyErr) {
+        console.error(keyErr);
+        setAPIKeyError("Registry created, but could not create the default API key. Please create one below.");
+      }
     } catch (err) {
       console.error(err);
       setRegistryError("Could not create registry.");
     } finally {
-      setIsCreatingRegistry(false);
+      setIsCompletingOnboarding(false);
     }
   };
 
@@ -349,6 +411,19 @@ export default function DashboardPage() {
     }
   };
 
+  const copyText = async (text: string, feedbackKey: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedCommandKey(feedbackKey);
+      window.setTimeout(() => setCopiedCommandKey((previous) => (
+        previous === feedbackKey ? null : previous
+      )), 1800);
+    } catch (err) {
+      console.error(err);
+      setRegistryError("Could not copy to clipboard.");
+    }
+  };
+
   const handleCopySecret = async () => {
     if (!newSecretKey) {
       return;
@@ -393,13 +468,17 @@ export default function DashboardPage() {
 
           {isCheckingRegistries ? (
             <p>Checking your registries...</p>
-          ) : registries.length === 0 ? (
+          ) : isOnboardingStep1 ? (
             <form onSubmit={handleCreateRegistry} className="dashboard-onboarding-card">
+              <p className="dashboard-onboarding-step">Step 1 of 2</p>
               <p className="dashboard-onboarding-copy">
-                You do not have a registry yet. Choose a registry name:
+                Choose your registry name.
+              </p>
+              <p className="dashboard-onboarding-note">
+                This name cannot be changed later.
               </p>
               <label htmlFor="registry-name" className="dashboard-field-label">
-                New Registry Name
+                Registry Name
               </label>
               <input
                 id="registry-name"
@@ -411,10 +490,63 @@ export default function DashboardPage() {
                 className="dashboard-field-input"
               />
               <RegistryCommandPreview name={registryName} />
-              <button type="submit" disabled={isCreatingRegistry} className="dashboard-primary-btn">
-                {isCreatingRegistry ? "Creating..." : "Create registry"}
+              <button type="submit" disabled={isCompletingOnboarding} className="dashboard-primary-btn">
+                {isCompletingOnboarding ? "Setting up..." : "Continue"}
               </button>
             </form>
+          ) : isOnboardingStep2 && onboardingSetup ? (
+            <section className="dashboard-onboarding-card dashboard-onboarding-card-wide">
+              <p className="dashboard-onboarding-step">Step 2 of 2</p>
+              <p className="dashboard-onboarding-copy">
+                Your registry <code>{onboardingSetup.registryName}</code> is ready.
+              </p>
+              <p className="dashboard-onboarding-note">
+                We created your default API key <code>{onboardingSetup.apiKeyName}</code>. Copy one of these login commands.
+              </p>
+
+              <div className="dashboard-onboarding-commands">
+                <div className="dashboard-onboarding-command-row">
+                  <code className="dashboard-command">{onboardingDockerLoginCommand}</code>
+                  <button
+                    type="button"
+                    className="dashboard-secondary-btn"
+                    onClick={() => copyText(onboardingDockerLoginCommand, "docker-login")}
+                  >
+                    {copiedCommandKey === "docker-login" ? "Copied" : "Copy"}
+                  </button>
+                </div>
+                <div className="dashboard-onboarding-command-row">
+                  <code className="dashboard-command">{onboardingPodmanLoginCommand}</code>
+                  <button
+                    type="button"
+                    className="dashboard-secondary-btn"
+                    onClick={() => copyText(onboardingPodmanLoginCommand, "podman-login")}
+                  >
+                    {copiedCommandKey === "podman-login" ? "Copied" : "Copy"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="dashboard-preview dashboard-api-quickstart">
+                <p className="dashboard-preview-title">After login</p>
+                <code className="dashboard-command">
+                  docker push push.bin2.io/{onboardingSetup.registryName}/my-image:latest
+                </code>
+                <code className="dashboard-command">
+                  docker pull bin2.io/{onboardingSetup.registryName}/my-image:latest
+                </code>
+              </div>
+
+              <div className="dashboard-onboarding-actions">
+                <button
+                  type="button"
+                  className="dashboard-primary-btn"
+                  onClick={() => setOnboardingSetup(null)}
+                >
+                  Go to dashboard
+                </button>
+              </div>
+            </section>
           ) : (
             <div className="dashboard-section">
               <p>Registry: {registries[0]?.name}</p>
@@ -424,121 +556,123 @@ export default function DashboardPage() {
 
           {registryError ? <p className="dashboard-error">{registryError}</p> : null}
 
-          <section className="dashboard-api-card">
-            <div className="dashboard-api-heading">
-              <h2>API Keys</h2>
-              <p>Create and manage keys for docker login and registry pushes/pulls.</p>
-            </div>
-
-            <form onSubmit={handleCreateAPIKey} className="dashboard-api-create-form">
-              <label htmlFor="api-key-name" className="dashboard-field-label">API Key Name</label>
-              <div className="dashboard-api-create-row">
-                <input
-                  id="api-key-name"
-                  type="text"
-                  value={apiKeyName}
-                  onChange={(e) => {
-                    setAPIKeyName(e.target.value);
-                    if (apiKeyError) {
-                      setAPIKeyError(null);
-                    }
-                  }}
-                  placeholder="ci-key"
-                  autoComplete="off"
-                  className="dashboard-field-input"
-                  disabled={isCreatingAPIKey}
-                />
-                <button type="submit" disabled={isCreatingAPIKey} className="dashboard-primary-btn">
-                  {isCreatingAPIKey ? "Generating..." : "Generate key"}
-                </button>
+          {!isOnboardingStep1 && !isOnboardingStep2 ? (
+            <section className="dashboard-api-card">
+              <div className="dashboard-api-heading">
+                <h2>API Keys</h2>
+                <p>Create and manage keys for docker login and registry pushes/pulls.</p>
               </div>
-            </form>
 
-            {newSecretKey ? (
-              <div className="dashboard-secret-card">
-                <p className="dashboard-secret-title">New API key generated</p>
-                <p className="dashboard-secret-help">Copy this now. It will not be shown again.</p>
-                <code className="dashboard-secret-value">
-                  {isSecretVisible ? newSecretKey : maskedSecretKey}
-                </code>
-                <div className="dashboard-secret-actions">
-                  <button
-                    type="button"
-                    className="dashboard-secondary-btn"
-                    onClick={() => setIsSecretVisible((value) => !value)}
-                  >
-                    {isSecretVisible ? "Hide" : "Show"}
-                  </button>
-                  <button
-                    type="button"
-                    className="dashboard-secondary-btn"
-                    onClick={handleCopySecret}
-                  >
-                    {isSecretCopied ? "Copied" : "Copy"}
-                  </button>
-                  <button
-                    type="button"
-                    className="dashboard-secondary-btn"
-                    onClick={() => {
-                      setNewSecretKey(null);
-                      setIsSecretVisible(false);
-                      setIsSecretCopied(false);
+              <form onSubmit={handleCreateAPIKey} className="dashboard-api-create-form">
+                <label htmlFor="api-key-name" className="dashboard-field-label">API Key Name</label>
+                <div className="dashboard-api-create-row">
+                  <input
+                    id="api-key-name"
+                    type="text"
+                    value={apiKeyName}
+                    onChange={(e) => {
+                      setAPIKeyName(e.target.value);
+                      if (apiKeyError) {
+                        setAPIKeyError(null);
+                      }
                     }}
-                  >
-                    Dismiss
+                    placeholder="ci-key"
+                    autoComplete="off"
+                    className="dashboard-field-input"
+                    disabled={isCreatingAPIKey}
+                  />
+                  <button type="submit" disabled={isCreatingAPIKey} className="dashboard-primary-btn">
+                    {isCreatingAPIKey ? "Generating..." : "Generate key"}
                   </button>
                 </div>
+              </form>
+
+              {newSecretKey ? (
+                <div className="dashboard-secret-card">
+                  <p className="dashboard-secret-title">New API key generated</p>
+                  <p className="dashboard-secret-help">Copy this now. It will not be shown again.</p>
+                  <code className="dashboard-secret-value">
+                    {isSecretVisible ? newSecretKey : maskedSecretKey}
+                  </code>
+                  <div className="dashboard-secret-actions">
+                    <button
+                      type="button"
+                      className="dashboard-secondary-btn"
+                      onClick={() => setIsSecretVisible((value) => !value)}
+                    >
+                      {isSecretVisible ? "Hide" : "Show"}
+                    </button>
+                    <button
+                      type="button"
+                      className="dashboard-secondary-btn"
+                      onClick={handleCopySecret}
+                    >
+                      {isSecretCopied ? "Copied" : "Copy"}
+                    </button>
+                    <button
+                      type="button"
+                      className="dashboard-secondary-btn"
+                      onClick={() => {
+                        setNewSecretKey(null);
+                        setIsSecretVisible(false);
+                        setIsSecretCopied(false);
+                      }}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="dashboard-preview dashboard-api-quickstart">
+                <p className="dashboard-preview-title">Quick start</p>
+                <code className="dashboard-command">
+                  docker login push.bin2.io -u {registryForCommands} -p {newSecretKey ? "&lt;your-api-key&gt;" : "&lt;api-key&gt;"}
+                </code>
+                <code className="dashboard-command">
+                  docker push push.bin2.io/{registryForCommands}/my-image:latest
+                </code>
+                <code className="dashboard-command">
+                  docker pull bin2.io/{registryForCommands}/my-image:latest
+                </code>
               </div>
-            ) : null}
 
-            <div className="dashboard-preview dashboard-api-quickstart">
-              <p className="dashboard-preview-title">Quick start</p>
-              <code className="dashboard-command">
-                docker login push.bin2.io -u {registryForCommands} -p {newSecretKey ? "&lt;your-api-key&gt;" : "&lt;api-key&gt;"}
-              </code>
-              <code className="dashboard-command">
-                docker push push.bin2.io/{registryForCommands}/my-image:latest
-              </code>
-              <code className="dashboard-command">
-                docker pull bin2.io/{registryForCommands}/my-image:latest
-              </code>
-            </div>
+              <div className="dashboard-api-list-wrap">
+                <h3>Active API Keys</h3>
+                {isLoadingAPIKeys ? (
+                  <p>Loading API keys...</p>
+                ) : apiKeys.length === 0 ? (
+                  <p>No API keys yet. Generate one to get started.</p>
+                ) : (
+                  <ul className="dashboard-api-list">
+                    {apiKeys.map((apiKey) => {
+                      const isDeleting = deletingKeyIDs.has(apiKey.id);
+                      return (
+                        <li key={apiKey.id} className="dashboard-api-list-item">
+                          <div className="dashboard-api-list-meta">
+                            <p className="dashboard-api-key-name">{apiKey.keyName}</p>
+                            <p className="dashboard-api-key-dates">
+                              Created {formatDate(apiKey.createdAt)} · Last used {formatDate(apiKey.lastUsedAt)}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className="dashboard-danger-btn"
+                            onClick={() => handleDeleteAPIKey(apiKey.id)}
+                            disabled={isDeleting}
+                          >
+                            {isDeleting ? "Deleting..." : "Delete"}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
 
-            <div className="dashboard-api-list-wrap">
-              <h3>Active API Keys</h3>
-              {isLoadingAPIKeys ? (
-                <p>Loading API keys...</p>
-              ) : apiKeys.length === 0 ? (
-                <p>No API keys yet. Generate one to get started.</p>
-              ) : (
-                <ul className="dashboard-api-list">
-                  {apiKeys.map((apiKey) => {
-                    const isDeleting = deletingKeyIDs.has(apiKey.id);
-                    return (
-                      <li key={apiKey.id} className="dashboard-api-list-item">
-                        <div className="dashboard-api-list-meta">
-                          <p className="dashboard-api-key-name">{apiKey.keyName}</p>
-                          <p className="dashboard-api-key-dates">
-                            Created {formatDate(apiKey.createdAt)} · Last used {formatDate(apiKey.lastUsedAt)}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          className="dashboard-danger-btn"
-                          onClick={() => handleDeleteAPIKey(apiKey.id)}
-                          disabled={isDeleting}
-                        >
-                          {isDeleting ? "Deleting..." : "Delete"}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-
-            {apiKeyError ? <p className="dashboard-error">{apiKeyError}</p> : null}
-          </section>
+              {apiKeyError ? <p className="dashboard-error">{apiKeyError}</p> : null}
+            </section>
+          ) : null}
 
           <p className="dashboard-link-row">
             <Link href="/">Back to landing</Link>

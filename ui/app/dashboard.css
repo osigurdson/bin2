@@ -245,3 +245,50 @@
     flex-direction: column;
   }
 }
+
+.dashboard-onboarding-step {
+  margin: 0;
+  font-size: 0.82rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+  font-weight: 700;
+}
+
+.dashboard-onboarding-note {
+  margin: 0;
+  color: var(--text-subtle);
+}
+
+.dashboard-onboarding-card-wide {
+  max-width: 760px;
+}
+
+.dashboard-onboarding-commands {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.dashboard-onboarding-command-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.dashboard-onboarding-command-row .dashboard-command {
+  margin: 0;
+  flex: 1;
+}
+
+.dashboard-onboarding-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+@media (max-width: 720px) {
+  .dashboard-onboarding-command-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
