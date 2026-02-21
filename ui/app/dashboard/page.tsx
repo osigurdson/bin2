@@ -9,18 +9,53 @@ import {
   useUser,
 } from "@clerk/nextjs";
 import Link from "next/link";
-import { SyntheticEvent, useEffect, useState } from "react";
+import { SyntheticEvent, useEffect, useMemo, useState } from "react";
 
 type Registry = {
   id: string;
   name: string;
 };
 
+type APIKey = {
+  id: string;
+  keyName: string;
+  prefix: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+};
+
+type CreateAPIKeyResponse = {
+  apiKey: APIKey;
+  secretKey: string;
+};
+
 type ListRegistriesResponse = {
   registries?: Registry[];
 };
 
+type ListAPIKeysResponse = {
+  keys?: APIKey[];
+};
+
+const keyNameRe = /^[A-Za-z0-9._-]{2,8}$/;
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000";
+
+function formatDate(ts: string | null): string {
+  if (!ts) {
+    return "Never used";
+  }
+
+  const date = new Date(ts);
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown";
+  }
+
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
 
 function RegistryCommandPreview({ name }: { name: string }) {
   const trimmed = name.trim();
@@ -45,11 +80,35 @@ function RegistryCommandPreview({ name }: { name: string }) {
 export default function DashboardPage() {
   const { isLoaded, user } = useUser();
   const { getToken } = useAuth();
+
   const [isCheckingRegistries, setIsCheckingRegistries] = useState(true);
   const [isCreatingRegistry, setIsCreatingRegistry] = useState(false);
   const [registries, setRegistries] = useState<Registry[]>([]);
   const [registryName, setRegistryName] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [registryError, setRegistryError] = useState<string | null>(null);
+
+  const [isLoadingAPIKeys, setIsLoadingAPIKeys] = useState(true);
+  const [isCreatingAPIKey, setIsCreatingAPIKey] = useState(false);
+  const [deletingKeyIDs, setDeletingKeyIDs] = useState<Set<string>>(new Set());
+  const [apiKeys, setAPIKeys] = useState<APIKey[]>([]);
+  const [apiKeyName, setAPIKeyName] = useState("");
+  const [apiKeyError, setAPIKeyError] = useState<string | null>(null);
+  const [newSecretKey, setNewSecretKey] = useState<string | null>(null);
+  const [isSecretVisible, setIsSecretVisible] = useState(false);
+  const [isSecretCopied, setIsSecretCopied] = useState(false);
+
+  const registryNamespace = registries[0]?.name ?? "";
+  const registryForCommands = registryNamespace || "{your-registry}";
+
+  const maskedSecretKey = useMemo(() => {
+    if (!newSecretKey) {
+      return "";
+    }
+    if (newSecretKey.length <= 8) {
+      return "••••••••";
+    }
+    return `${newSecretKey.slice(0, 8)}••••••••`;
+  }, [newSecretKey]);
 
   useEffect(() => {
     if (!isLoaded || !user) {
@@ -57,9 +116,11 @@ export default function DashboardPage() {
     }
 
     let active = true;
-    const loadRegistries = async () => {
+    const loadDashboardData = async () => {
       setIsCheckingRegistries(true);
-      setError(null);
+      setIsLoadingAPIKeys(true);
+      setRegistryError(null);
+      setAPIKeyError(null);
 
       try {
         const token = await getToken();
@@ -67,39 +128,84 @@ export default function DashboardPage() {
           throw new Error("missing clerk token");
         }
 
-        const res = await fetch(`${apiBaseUrl}/api/v1/registries`, {
+        const registryRequest = fetch(`${apiBaseUrl}/api/v1/registries`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
         });
 
-        if (!res.ok) {
-          throw new Error(`registry lookup failed (${res.status})`);
-        }
+        const keyRequest = fetch(`${apiBaseUrl}/api/v1/api-keys`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
-        const body = (await res.json()) as ListRegistriesResponse;
+        const [registryResult, keyResult] = await Promise.allSettled([
+          registryRequest,
+          keyRequest,
+        ]);
+
         if (!active) {
           return;
         }
-        setRegistries(body.registries ?? []);
+
+        if (registryResult.status === "fulfilled") {
+          if (!registryResult.value.ok) {
+            console.error(new Error(`registry lookup failed (${registryResult.value.status})`));
+            setRegistryError("Could not load registries.");
+          } else {
+            const body = (await registryResult.value.json()) as ListRegistriesResponse;
+            setRegistries(body.registries ?? []);
+          }
+        } else {
+          console.error(registryResult.reason);
+          setRegistryError("Could not load registries.");
+        }
+
+        if (keyResult.status === "fulfilled") {
+          if (!keyResult.value.ok) {
+            console.error(new Error(`api key lookup failed (${keyResult.value.status})`));
+            setAPIKeyError("Could not load API keys.");
+          } else {
+            const body = (await keyResult.value.json()) as ListAPIKeysResponse;
+            setAPIKeys(body.keys ?? []);
+          }
+        } else {
+          console.error(keyResult.reason);
+          setAPIKeyError("Could not load API keys.");
+        }
       } catch (err) {
         if (!active) {
           return;
         }
         console.error(err);
-        setError("Could not load registries.");
+        setRegistryError("Could not load registries.");
+        setAPIKeyError("Could not load API keys.");
       } finally {
         if (active) {
           setIsCheckingRegistries(false);
+          setIsLoadingAPIKeys(false);
         }
       }
     };
 
-    void loadRegistries();
+    void loadDashboardData();
     return () => {
       active = false;
     };
   }, [getToken, isLoaded, user?.id]);
+
+  const validateAPIKeyName = (name: string): string | null => {
+    if (!keyNameRe.test(name)) {
+      return "API key name must be 2-8 chars of letters, numbers, '.', '_' or '-'.";
+    }
+
+    if (apiKeys.some((key) => key.keyName === name)) {
+      return "An API key with that name already exists.";
+    }
+
+    return null;
+  };
 
   const handleCreateRegistry = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -109,12 +215,12 @@ export default function DashboardPage() {
 
     const name = registryName.trim();
     if (name.length === 0) {
-      setError("Please provide a registry name.");
+      setRegistryError("Please provide a registry name.");
       return;
     }
 
     setIsCreatingRegistry(true);
-    setError(null);
+    setRegistryError(null);
 
     try {
       const token = await getToken();
@@ -132,7 +238,7 @@ export default function DashboardPage() {
       });
 
       if (res.status === 409) {
-        setError("That registry name is already taken.");
+        setRegistryError("That registry name is already taken.");
         return;
       }
       if (!res.ok) {
@@ -144,9 +250,117 @@ export default function DashboardPage() {
       setRegistryName("");
     } catch (err) {
       console.error(err);
-      setError("Could not create registry.");
+      setRegistryError("Could not create registry.");
     } finally {
       setIsCreatingRegistry(false);
+    }
+  };
+
+  const handleCreateAPIKey = async (e: SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    const name = apiKeyName.trim();
+    const validationError = validateAPIKeyName(name);
+    if (validationError) {
+      setAPIKeyError(validationError);
+      return;
+    }
+
+    setIsCreatingAPIKey(true);
+    setAPIKeyError(null);
+
+    try {
+      const token = await getToken();
+      if (!token) {
+        throw new Error("missing clerk token");
+      }
+
+      const res = await fetch(`${apiBaseUrl}/api/v1/api-keys`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ keyName: name }),
+      });
+
+      if (res.status === 409) {
+        setAPIKeyError("An API key with that name already exists.");
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(`api key create failed (${res.status})`);
+      }
+
+      const created = (await res.json()) as CreateAPIKeyResponse;
+      setAPIKeys((previous) => [created.apiKey, ...previous]);
+      setNewSecretKey(created.secretKey);
+      setIsSecretVisible(false);
+      setIsSecretCopied(false);
+      setAPIKeyName("");
+    } catch (err) {
+      console.error(err);
+      setAPIKeyError("Could not create API key.");
+    } finally {
+      setIsCreatingAPIKey(false);
+    }
+  };
+
+  const handleDeleteAPIKey = async (id: string) => {
+    const shouldDelete = window.confirm("Delete this API key? This cannot be undone.");
+    if (!shouldDelete) {
+      return;
+    }
+
+    setDeletingKeyIDs((previous) => {
+      const next = new Set(previous);
+      next.add(id);
+      return next;
+    });
+    setAPIKeyError(null);
+
+    try {
+      const token = await getToken();
+      if (!token) {
+        throw new Error("missing clerk token");
+      }
+
+      const res = await fetch(`${apiBaseUrl}/api/v1/api-keys/${id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.status !== 204 && res.status !== 404) {
+        throw new Error(`api key delete failed (${res.status})`);
+      }
+
+      setAPIKeys((previous) => previous.filter((item) => item.id !== id));
+    } catch (err) {
+      console.error(err);
+      setAPIKeyError("Could not delete API key.");
+    } finally {
+      setDeletingKeyIDs((previous) => {
+        const next = new Set(previous);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const handleCopySecret = async () => {
+    if (!newSecretKey) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(newSecretKey);
+      setIsSecretCopied(true);
+      window.setTimeout(() => setIsSecretCopied(false), 1800);
+    } catch (err) {
+      console.error(err);
+      setAPIKeyError("Could not copy API key to clipboard.");
     }
   };
 
@@ -173,7 +387,7 @@ export default function DashboardPage() {
         <main className="container dashboard-main">
           <h1>Dashboard</h1>
           <p>
-            Signed in as{" "}
+            Signed in as {" "}
             {user?.primaryEmailAddress?.emailAddress ?? "unknown user"}.
           </p>
 
@@ -208,7 +422,123 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {error ? <p className="dashboard-error">{error}</p> : null}
+          {registryError ? <p className="dashboard-error">{registryError}</p> : null}
+
+          <section className="dashboard-api-card">
+            <div className="dashboard-api-heading">
+              <h2>API Keys</h2>
+              <p>Create and manage keys for docker login and registry pushes/pulls.</p>
+            </div>
+
+            <form onSubmit={handleCreateAPIKey} className="dashboard-api-create-form">
+              <label htmlFor="api-key-name" className="dashboard-field-label">API Key Name</label>
+              <div className="dashboard-api-create-row">
+                <input
+                  id="api-key-name"
+                  type="text"
+                  value={apiKeyName}
+                  onChange={(e) => {
+                    setAPIKeyName(e.target.value);
+                    if (apiKeyError) {
+                      setAPIKeyError(null);
+                    }
+                  }}
+                  placeholder="ci-key"
+                  autoComplete="off"
+                  className="dashboard-field-input"
+                  disabled={isCreatingAPIKey}
+                />
+                <button type="submit" disabled={isCreatingAPIKey} className="dashboard-primary-btn">
+                  {isCreatingAPIKey ? "Generating..." : "Generate key"}
+                </button>
+              </div>
+            </form>
+
+            {newSecretKey ? (
+              <div className="dashboard-secret-card">
+                <p className="dashboard-secret-title">New API key generated</p>
+                <p className="dashboard-secret-help">Copy this now. It will not be shown again.</p>
+                <code className="dashboard-secret-value">
+                  {isSecretVisible ? newSecretKey : maskedSecretKey}
+                </code>
+                <div className="dashboard-secret-actions">
+                  <button
+                    type="button"
+                    className="dashboard-secondary-btn"
+                    onClick={() => setIsSecretVisible((value) => !value)}
+                  >
+                    {isSecretVisible ? "Hide" : "Show"}
+                  </button>
+                  <button
+                    type="button"
+                    className="dashboard-secondary-btn"
+                    onClick={handleCopySecret}
+                  >
+                    {isSecretCopied ? "Copied" : "Copy"}
+                  </button>
+                  <button
+                    type="button"
+                    className="dashboard-secondary-btn"
+                    onClick={() => {
+                      setNewSecretKey(null);
+                      setIsSecretVisible(false);
+                      setIsSecretCopied(false);
+                    }}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="dashboard-preview dashboard-api-quickstart">
+              <p className="dashboard-preview-title">Quick start</p>
+              <code className="dashboard-command">
+                docker login push.bin2.io -u {registryForCommands} -p {newSecretKey ? "&lt;your-api-key&gt;" : "&lt;api-key&gt;"}
+              </code>
+              <code className="dashboard-command">
+                docker push push.bin2.io/{registryForCommands}/my-image:latest
+              </code>
+              <code className="dashboard-command">
+                docker pull bin2.io/{registryForCommands}/my-image:latest
+              </code>
+            </div>
+
+            <div className="dashboard-api-list-wrap">
+              <h3>Active API Keys</h3>
+              {isLoadingAPIKeys ? (
+                <p>Loading API keys...</p>
+              ) : apiKeys.length === 0 ? (
+                <p>No API keys yet. Generate one to get started.</p>
+              ) : (
+                <ul className="dashboard-api-list">
+                  {apiKeys.map((apiKey) => {
+                    const isDeleting = deletingKeyIDs.has(apiKey.id);
+                    return (
+                      <li key={apiKey.id} className="dashboard-api-list-item">
+                        <div className="dashboard-api-list-meta">
+                          <p className="dashboard-api-key-name">{apiKey.keyName}</p>
+                          <p className="dashboard-api-key-dates">
+                            Created {formatDate(apiKey.createdAt)} · Last used {formatDate(apiKey.lastUsedAt)}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="dashboard-danger-btn"
+                          onClick={() => handleDeleteAPIKey(apiKey.id)}
+                          disabled={isDeleting}
+                        >
+                          {isDeleting ? "Deleting..." : "Delete"}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+
+            {apiKeyError ? <p className="dashboard-error">{apiKeyError}</p> : null}
+          </section>
 
           <p className="dashboard-link-row">
             <Link href="/">Back to landing</Link>

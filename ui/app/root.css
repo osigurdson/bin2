@@ -20,16 +20,21 @@
   --color-border: #eee;
   --color-bg: #fff;
   --color-accent: #111;
+  --color-accent-contrast: #fff;
 
   --surface-1: #f8f8f8;
   --surface-2: #fafafa;
   --surface-3: #ffffff;
   --surface-live: #f3f7ff;
+  --surface-danger: #fff4f4;
   --border-subtle: #d8d8d8;
   --border-soft: #e8e8e8;
   --border-live: #d9e5ff;
   --border-strong: #222222;
+  --border-danger: #e4b1b1;
   --text-subtle: #444444;
+  --text-danger: #7e1f1f;
+  --focus-ring: rgba(17, 17, 17, 0.15);
 }
 
 * {
