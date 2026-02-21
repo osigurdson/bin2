@@ -11,9 +11,10 @@ import (
 )
 
 type Server struct {
-	ctx    context.Context
-	router *gin.Engine
-	db     *db.DB
+	ctx             context.Context
+	router          *gin.Engine
+	db              *db.DB
+	registryStorage registryStorage
 }
 
 func New() (*Server, error) {
@@ -32,10 +33,21 @@ func New() (*Server, error) {
 		return nil, fmt.Errorf("could not connect to postgres: %w", err)
 	}
 
+	rs, err := newRegistryStorageFromEnv()
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("could not initialize registry storage: %w", err)
+	}
+	if err := rs.Init(); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("could not initialize registry storage backend: %w", err)
+	}
+
 	s := &Server{
-		ctx:    context.Background(),
-		router: gin.Default(),
-		db:     conn,
+		ctx:             context.Background(),
+		router:          gin.Default(),
+		db:              conn,
+		registryStorage: rs,
 	}
 	s.addRoutes()
 	return s, nil

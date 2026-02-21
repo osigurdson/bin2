@@ -82,3 +82,18 @@ func (d *DB) RemoveAPIKey(ctx context.Context, userID, id uuid.UUID) error {
 	}
 	return nil
 }
+
+func (d *DB) UpdateAPIKeyLastUsedAt(ctx context.Context, userID, id uuid.UUID) (time.Time, error) {
+	var lastUsedAt time.Time
+	const cmd = `UPDATE api_keys
+		SET last_used_at = NOW()
+		WHERE user_id = $1 AND id = $2
+		RETURNING last_used_at`
+	if err := d.conn.QueryRow(ctx, cmd, userID, id).Scan(&lastUsedAt); err != nil {
+		if isNoRows(err) {
+			return time.Time{}, ErrNotFound
+		}
+		return time.Time{}, err
+	}
+	return lastUsedAt, nil
+}

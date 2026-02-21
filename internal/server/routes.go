@@ -22,6 +22,8 @@ func (s *Server) addRoutes() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
+	s.addRegistryRoutes()
+
 	api := s.router.Group("/api/v1")
 	api.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})

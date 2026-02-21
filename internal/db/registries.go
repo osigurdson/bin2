@@ -60,3 +60,17 @@ func (d *DB) ListRegistriesByUser(ctx context.Context, userID uuid.UUID) ([]Regi
 	}
 	return registries, nil
 }
+
+func (d *DB) GetRegistryByName(ctx context.Context, name string) (Registry, error) {
+	const cmd = `SELECT id, user_id, name
+		FROM registries
+		WHERE name = $1`
+	var registry Registry
+	if err := d.conn.QueryRow(ctx, cmd, name).Scan(&registry.ID, &registry.UserID, &registry.Name); err != nil {
+		if isNoRows(err) {
+			return Registry{}, ErrNotFound
+		}
+		return Registry{}, err
+	}
+	return registry, nil
+}

@@ -39,3 +39,6 @@ ui/build/
 ui/.vercel/
 ui/next-env.d.ts
 ui/*.tsbuildinfo
+
+# Local registry storage
+registry-data/
