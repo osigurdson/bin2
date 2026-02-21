@@ -1,0 +1,35 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local secrets and env
+.env
+.env.*
+!.env.example
+ui/.env*
+!ui/.env.example
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+*.swo
+
+# Go build / test artifacts
+*.out
+*.test
+coverage.out
+
+# Local compiled binaries
+cmd/init/init
+cmd/api/api
+
+# Next.js / Node artifacts
+ui/node_modules/
+ui/.next/
+ui/out/
+ui/build/
+ui/.vercel/
+ui/next-env.d.ts
+ui/*.tsbuildinfo
