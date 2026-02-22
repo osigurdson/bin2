@@ -1,4 +1,8 @@
-import { jwtVerify, type JWTPayload } from "jose";
+import {
+  createRemoteJWKSet,
+  jwtVerify,
+  type JWTPayload,
+} from "jose";
 
 const apiVersion = "registry/2.0";
 const defaultService = "localhost:5000";
@@ -12,9 +16,9 @@ const digestRe = /^sha256:([a-fA-F0-9]{64})$/;
 
 type Env = {
   BUCKET: R2Bucket;
-  REGISTRY_JWT_KEY: string;
   REGISTRY_SERVICE?: string;
   REGISTRY_TOKEN_REALM?: string;
+  REGISTRY_JWKS_URL?: string;
 };
 
 type RegistryTokenAccess = {
@@ -22,6 +26,10 @@ type RegistryTokenAccess = {
   name: string;
   actions: string[];
 };
+
+type JWKSResolver = ReturnType<typeof createRemoteJWKSet>;
+
+const jwksCache = new Map<string, JWKSResolver>();
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -242,14 +250,17 @@ async function authenticate(
     };
   }
 
-  if ((env.REGISTRY_JWT_KEY ?? "").trim() === "") {
+  let jwks: JWKSResolver;
+  try {
+    jwks = loadJWKSResolver(env);
+  } catch {
     return {
       namespace: "",
       response: ociError(
         request.method,
         500,
         "UNKNOWN",
-        "registry worker is not configured",
+        "invalid REGISTRY_JWKS_URL",
       ),
     };
   }
@@ -258,10 +269,11 @@ async function authenticate(
   try {
     const verified = await jwtVerify(
       token,
-      new TextEncoder().encode(env.REGISTRY_JWT_KEY),
+      jwks,
       {
-        algorithms: ["HS256"],
+        algorithms: ["EdDSA"],
         audience: service,
+        issuer: service,
         clockTolerance: "30s",
       },
     );
@@ -536,4 +548,24 @@ function tokenRealm(env: Env): string {
     return realm;
   }
   return defaultTokenRealm;
+}
+
+function loadJWKSResolver(env: Env): JWKSResolver {
+  const url = jwksURL(env);
+  let resolver = jwksCache.get(url);
+  if (resolver === undefined) {
+    resolver = createRemoteJWKSet(new URL(url));
+    jwksCache.set(url, resolver);
+  }
+  return resolver;
+}
+
+function jwksURL(env: Env): string {
+  const explicit = (env.REGISTRY_JWKS_URL ?? "").trim();
+  if (explicit !== "") {
+    return explicit;
+  }
+
+  const realm = tokenRealm(env);
+  return `${new URL(realm).origin}/.well-known/jwks.json`;
 }

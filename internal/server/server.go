@@ -2,8 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/ed25519"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -13,12 +13,13 @@ import (
 )
 
 type Server struct {
-	ctx             context.Context
-	router          *gin.Engine
-	db              *db.DB
-	registryStorage registryStorage
-	registryJWTKey  string
-	registryService string
+	ctx                   context.Context
+	router                *gin.Engine
+	db                    *db.DB
+	registryStorage       registryStorage
+	registryJWTPrivateKey ed25519.PrivateKey
+	registryJWTPublicKey  ed25519.PublicKey
+	registryService       string
 }
 
 func New() (*Server, error) {
@@ -47,17 +48,20 @@ func New() (*Server, error) {
 		return nil, fmt.Errorf("could not initialize registry storage backend: %w", err)
 	}
 
-	s := &Server{
-		ctx:             context.Background(),
-		router:          gin.Default(),
-		db:              conn,
-		registryStorage: rs,
-		registryJWTKey:  strings.TrimSpace(getenvDefault("REGISTRY_JWT_KEY", "")),
-		registryService: strings.TrimSpace(getenvDefault("REGISTRY_SERVICE", "")),
+	registryJWTPrivateKey, registryJWTPublicKey, err := loadRegistryJWTKeys()
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("could not load registry jwt keys: %w", err)
 	}
-	if s.registryJWTKey == "" {
-		s.registryJWTKey = "bin2-dev-registry-jwt-key"
-		slog.Warn("REGISTRY_JWT_KEY not set; using insecure development fallback key")
+
+	s := &Server{
+		ctx:                   context.Background(),
+		router:                gin.Default(),
+		db:                    conn,
+		registryStorage:       rs,
+		registryJWTPrivateKey: registryJWTPrivateKey,
+		registryJWTPublicKey:  registryJWTPublicKey,
+		registryService:       strings.TrimSpace(getenvDefault("REGISTRY_SERVICE", "")),
 	}
 	s.addRoutes()
 	return s, nil

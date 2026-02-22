@@ -90,8 +90,8 @@ func (s *Server) issueRegistryToken(namespace, service string, access []registry
 		},
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signed, err := token.SignedString([]byte(s.registryJWTKey))
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	signed, err := token.SignedString(s.registryJWTPrivateKey)
 	if err != nil {
 		return "", time.Time{}, time.Time{}, err
 	}
@@ -104,12 +104,13 @@ func (s *Server) verifyRegistryToken(tokenString, service string) (*registryToke
 		tokenString,
 		claims,
 		func(token *jwt.Token) (any, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			if token.Method.Alg() != jwt.SigningMethodEdDSA.Alg() {
 				return nil, fmt.Errorf("unexpected signing method")
 			}
-			return []byte(s.registryJWTKey), nil
+			return s.registryJWTPublicKey, nil
 		},
 		jwt.WithLeeway(30*time.Second),
+		jwt.WithValidMethods([]string{jwt.SigningMethodEdDSA.Alg()}),
 	)
 	if err != nil {
 		return nil, err
@@ -120,6 +121,9 @@ func (s *Server) verifyRegistryToken(tokenString, service string) (*registryToke
 
 	if service != "" && !slices.Contains(claims.Audience, service) {
 		return nil, fmt.Errorf("token audience mismatch")
+	}
+	if service != "" && strings.TrimSpace(claims.Issuer) != service {
+		return nil, fmt.Errorf("token issuer mismatch")
 	}
 	if strings.TrimSpace(claims.Subject) == "" {
 		return nil, fmt.Errorf("token subject missing")

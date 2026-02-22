@@ -22,6 +22,7 @@ func (s *Server) addRoutes() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
+	s.addWellKnownRoutes()
 	s.addRegistryRoutes()
 
 	api := s.router.Group("/api/v1")
