@@ -33,6 +33,9 @@ Not implemented:
 - `REGISTRY_JWKS_URL`
 - R2 bucket binding `BUCKET` (configured to `bin2`)
 
+For local `wrangler dev`, keep `[[r2_buckets]].remote = true` so pull reads
+the real R2 bucket instead of local emulated R2 state.
+
 Generate an Ed25519 keypair for local use:
 
 ```bash

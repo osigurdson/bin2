@@ -38,10 +38,15 @@ func newRegistryStorageFromEnv() (registryStorage, error) {
 	dataDir := getenvDefault("REGISTRY_DATA_DIR", "registry-data")
 
 	switch backend {
+	case "r2":
+		return newR2RegistryStorageFromEnv(dataDir)
 	case "local":
 		return newLocalRegistryStorage(dataDir), nil
 	default:
-		return nil, fmt.Errorf("unsupported REGISTRY_STORAGE_BACKEND=%q (expected: local)", backend)
+		return nil, fmt.Errorf(
+			"unsupported REGISTRY_STORAGE_BACKEND=%q (expected: r2|local)",
+			backend,
+		)
 	}
 }
 

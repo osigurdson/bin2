@@ -10,3 +10,4 @@ REGISTRY_JWKS_URL = "http://localhost:5000/.well-known/jwks.json"
 [[r2_buckets]]
 binding = "BUCKET"
 bucket_name = "bin2"
+remote = true
