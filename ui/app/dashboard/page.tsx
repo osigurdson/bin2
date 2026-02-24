@@ -45,7 +45,24 @@ type OnboardingSetup = {
 
 const keyNameRe = /^[A-Za-z0-9._-]{2,8}$/;
 const defaultOnboardingKeyNames = ["default", "main", "cli", "local"];
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000";
+const localAPIBaseURL = "http://localhost:5000";
+const productionAPIBaseURL = "https://bin2.nthesis.ai";
+
+function resolveAPIBaseURL(): string {
+  const explicit = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (explicit && explicit.trim()) {
+    return explicit.trim();
+  }
+
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (host === "localhost" || host === "127.0.0.1") {
+      return localAPIBaseURL;
+    }
+  }
+
+  return productionAPIBaseURL;
+}
 
 function formatDate(ts: string | null): string {
   if (!ts) {
@@ -87,6 +104,7 @@ function RegistryCommandPreview({ name }: { name: string }) {
 export default function DashboardPage() {
   const { isLoaded, user } = useUser();
   const { getToken } = useAuth();
+  const apiBaseUrl = useMemo(() => resolveAPIBaseURL(), []);
 
   const [isCheckingRegistries, setIsCheckingRegistries] = useState(true);
   const [isCompletingOnboarding, setIsCompletingOnboarding] = useState(false);
@@ -213,7 +231,7 @@ export default function DashboardPage() {
     return () => {
       active = false;
     };
-  }, [getToken, isLoaded, user?.id]);
+  }, [apiBaseUrl, getToken, isLoaded, user?.id]);
 
   const validateAPIKeyName = (name: string): string | null => {
     if (!keyNameRe.test(name)) {
