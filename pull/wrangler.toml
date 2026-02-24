@@ -3,9 +3,9 @@ main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
 [vars]
-REGISTRY_SERVICE = "localhost:5000"
-REGISTRY_TOKEN_REALM = "http://localhost:5000/v2/token"
-REGISTRY_JWKS_URL = "http://localhost:5000/.well-known/jwks.json"
+REGISTRY_SERVICE = "bin2.nthesis.ai"
+REGISTRY_TOKEN_REALM = "https://bin2.nthesis.ai/v2/token"
+REGISTRY_JWKS_URL = "https://bin2.nthesis.ai/.well-known/jwks.json"
 
 [[r2_buckets]]
 binding = "BUCKET"
