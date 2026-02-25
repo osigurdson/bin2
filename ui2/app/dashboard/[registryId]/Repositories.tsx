@@ -23,6 +23,10 @@ export default function Repositories() {
     { id: '556', name: 'stream', lastTag: '7', lastPush: new Date(2026, 2, 24) },
     { id: '557', name: 'py', lastTag: '3', lastPush: new Date(2026, 1, 22) },
   ];
+
+  if (repos.length === 0) {
+    return null;
+  }
   return (
     <table className="w-full">
       <thead>
