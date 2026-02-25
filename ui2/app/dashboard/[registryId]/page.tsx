@@ -1,9 +1,14 @@
 import Registry from "./Registry";
 
-export default function Page() {
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ registryId: string }>;
+}) {
+  const { registryId } = await params;
   return (
     <div>
-      <Registry />
+      <Registry registryId={registryId} />
     </div>
   )
 }
