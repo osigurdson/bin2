@@ -1,4 +1,4 @@
-import Registry from "./Registry";
+import RegistryView from "./RegistryView";
 
 export default async function Page({
   params,
@@ -8,7 +8,7 @@ export default async function Page({
   const { registryId } = await params;
   return (
     <div>
-      <Registry registryId={registryId} />
+      <RegistryView registryId={registryId} />
     </div>
   )
 }

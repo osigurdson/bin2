@@ -19,7 +19,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={spaceMono.className}>
+    <html lang="en" className={spaceMono.className} data-theme="light">
       <body>
         {children}
       </body>
