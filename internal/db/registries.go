@@ -7,26 +7,26 @@ import (
 )
 
 type Registry struct {
-	ID     uuid.UUID
-	UserID uuid.UUID
-	Name   string
+	ID    uuid.UUID
+	OrgID uuid.UUID
+	Name  string
 }
 
 type AddRegistryArgs struct {
-	UserID uuid.UUID
-	Name   string
+	OrgID uuid.UUID
+	Name  string
 }
 
 func (d *DB) AddRegistry(ctx context.Context, args AddRegistryArgs) (Registry, error) {
 	registry := Registry{
-		ID:     uuid.New(),
-		UserID: args.UserID,
-		Name:   args.Name,
+		ID:    uuid.New(),
+		OrgID: args.OrgID,
+		Name:  args.Name,
 	}
 
-	const cmd = `INSERT INTO registries (id, user_id, name)
+	const cmd = `INSERT INTO registries (id, org_id, name)
 		VALUES ($1, $2, $3)`
-	if _, err := d.conn.Exec(ctx, cmd, registry.ID, registry.UserID, registry.Name); err != nil {
+	if _, err := d.conn.Exec(ctx, cmd, registry.ID, registry.OrgID, registry.Name); err != nil {
 		if isUniqueViolation(err) {
 			return Registry{}, ErrConflict
 		}
@@ -36,12 +36,12 @@ func (d *DB) AddRegistry(ctx context.Context, args AddRegistryArgs) (Registry, e
 	return registry, nil
 }
 
-func (d *DB) ListRegistriesByUser(ctx context.Context, userID uuid.UUID) ([]Registry, error) {
-	const cmd = `SELECT id, user_id, name
+func (d *DB) ListRegistriesByOrg(ctx context.Context, orgID uuid.UUID) ([]Registry, error) {
+	const cmd = `SELECT id, org_id, name
 		FROM registries
-		WHERE user_id = $1
+		WHERE org_id = $1
 		ORDER BY name ASC`
-	rows, err := d.conn.Query(ctx, cmd, userID)
+	rows, err := d.conn.Query(ctx, cmd, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func (d *DB) ListRegistriesByUser(ctx context.Context, userID uuid.UUID) ([]Regi
 	registries := make([]Registry, 0)
 	for rows.Next() {
 		var registry Registry
-		if err := rows.Scan(&registry.ID, &registry.UserID, &registry.Name); err != nil {
+		if err := rows.Scan(&registry.ID, &registry.OrgID, &registry.Name); err != nil {
 			return nil, err
 		}
 		registries = append(registries, registry)
@@ -62,11 +62,11 @@ func (d *DB) ListRegistriesByUser(ctx context.Context, userID uuid.UUID) ([]Regi
 }
 
 func (d *DB) GetRegistryByName(ctx context.Context, name string) (Registry, error) {
-	const cmd = `SELECT id, user_id, name
+	const cmd = `SELECT id, org_id, name
 		FROM registries
 		WHERE name = $1`
 	var registry Registry
-	if err := d.conn.QueryRow(ctx, cmd, name).Scan(&registry.ID, &registry.UserID, &registry.Name); err != nil {
+	if err := d.conn.QueryRow(ctx, cmd, name).Scan(&registry.ID, &registry.OrgID, &registry.Name); err != nil {
 		if isNoRows(err) {
 			return Registry{}, ErrNotFound
 		}

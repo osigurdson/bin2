@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Space_Mono } from "next/font/google";
+import { AuthKitProvider } from "@workos-inc/authkit-nextjs/components";
 import "./globals.css";
 
 const spaceMono = Space_Mono({
@@ -21,7 +22,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={spaceMono.className} data-theme="light">
       <body>
-        {children}
+        <AuthKitProvider>
+          {children}
+        </AuthKitProvider>
       </body>
     </html>
   );

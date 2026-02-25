@@ -42,7 +42,7 @@ func (s *Server) listRegistriesHandler(c *gin.Context) {
 		return
 	}
 
-	registries, err := s.db.ListRegistriesByUser(c.Request.Context(), u.id)
+	registries, err := s.db.ListRegistriesByOrg(c.Request.Context(), u.orgID)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return
@@ -83,8 +83,8 @@ func (s *Server) addRegistryHandler(c *gin.Context) {
 	}
 
 	registry, err := s.db.AddRegistry(c.Request.Context(), db.AddRegistryArgs{
-		UserID: u.id,
-		Name:   req.Name,
+		OrgID: u.orgID,
+		Name:  req.Name,
 	})
 	if err != nil {
 		if errors.Is(err, db.ErrConflict) {

@@ -3,15 +3,15 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"bin2.io/internal/db"
-	"github.com/clerk/clerk-sdk-go/v2"
-	clerkhttp "github.com/clerk/clerk-sdk-go/v2/http"
-	clerkuser "github.com/clerk/clerk-sdk-go/v2/user"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/workos/workos-go/v4/pkg/usermanagement"
 )
 
 var errUnauthorized = errors.New("unauthorized")
@@ -20,6 +20,13 @@ type user struct {
 	id    uuid.UUID
 	sub   string
 	email string
+	orgID uuid.UUID
+}
+
+type workosJWTClaims struct {
+	jwt.RegisteredClaims
+	SID   string `json:"sid"`
+	OrgID string `json:"org_id"`
 }
 
 func (s *Server) authMiddleware() gin.HandlerFunc {
@@ -30,43 +37,62 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		clerkMiddleware := clerkhttp.WithHeaderAuthorization()
-		authHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			claims, ok := clerk.SessionClaimsFromContext(r.Context())
-			if !ok || strings.TrimSpace(claims.Subject) == "" {
-				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-				return
-			}
+		const prefix = "Bearer "
+		if len(authHeader) < len(prefix) || !strings.EqualFold(authHeader[:len(prefix)], prefix) {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
+		tokenString := strings.TrimSpace(authHeader[len(prefix):])
 
-			u, err := s.getOrCreateUser(c.Request.Context(), claims.Subject)
-			if err != nil {
-				logError(err)
-				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "could not resolve user"})
-				return
-			}
+		var claims workosJWTClaims
+		_, err := jwt.ParseWithClaims(tokenString, &claims, s.jwks.Keyfunc,
+			jwt.WithIssuedAt(),
+			jwt.WithExpirationRequired(),
+			jwt.WithIssuer("https://api.workos.com"),
+			jwt.WithAudience(s.workosClientID),
+		)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
 
-			c.Set("user", u)
-			c.Next()
-		})
+		sub := strings.TrimSpace(claims.Subject)
+		if sub == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
 
-		clerkMiddleware(authHandler).ServeHTTP(c.Writer, c.Request)
+		u, err := s.getOrCreateUser(c.Request.Context(), sub)
+		if err != nil {
+			logError(err)
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "could not resolve user"})
+			return
+		}
+
+		c.Set("user", u)
+		c.Next()
 	}
 }
 
 func (s *Server) getOrCreateUser(ctx context.Context, sub string) (user, error) {
 	dbUser, err := s.db.GetUserBySub(ctx, sub)
 	if err == nil {
+		orgID, err := s.ensurePersonalOrg(ctx, dbUser.ID, dbUser.Sub)
+		if err != nil {
+			return user{}, err
+		}
 		return user{
 			id:    dbUser.ID,
 			sub:   dbUser.Sub,
 			email: dbUser.Email,
+			orgID: orgID,
 		}, nil
 	}
 	if !errors.Is(err, db.ErrNotFound) {
 		return user{}, err
 	}
 
-	email, err := s.getClerkUserEmail(ctx, sub)
+	email, err := s.getWorkOSUserEmail(ctx, sub)
 	if err != nil {
 		return user{}, err
 	}
@@ -74,7 +100,6 @@ func (s *Server) getOrCreateUser(ctx context.Context, sub string) (user, error) 
 	dbUser, err = s.db.EnsureUser(ctx, sub, email)
 	if err != nil {
 		if errors.Is(err, db.ErrConflict) {
-			// Recover if this email already exists under another sub.
 			byEmail, lookupErr := s.db.GetUserByEmail(ctx, email)
 			if lookupErr == nil {
 				if byEmail.Sub != sub {
@@ -83,13 +108,23 @@ func (s *Server) getOrCreateUser(ctx context.Context, sub string) (user, error) 
 						byEmail = updated
 					}
 				}
+				orgID, orgErr := s.ensurePersonalOrg(ctx, byEmail.ID, byEmail.Sub)
+				if orgErr != nil {
+					return user{}, orgErr
+				}
 				return user{
 					id:    byEmail.ID,
 					sub:   byEmail.Sub,
 					email: byEmail.Email,
+					orgID: orgID,
 				}, nil
 			}
 		}
+		return user{}, err
+	}
+
+	orgID, err := s.ensurePersonalOrg(ctx, dbUser.ID, dbUser.Sub)
+	if err != nil {
 		return user{}, err
 	}
 
@@ -97,7 +132,39 @@ func (s *Server) getOrCreateUser(ctx context.Context, sub string) (user, error) 
 		id:    dbUser.ID,
 		sub:   dbUser.Sub,
 		email: dbUser.Email,
+		orgID: orgID,
 	}, nil
+}
+
+func (s *Server) ensurePersonalOrg(ctx context.Context, userID uuid.UUID, sub string) (uuid.UUID, error) {
+	org, err := s.db.GetPersonalOrgByUser(ctx, userID)
+	if err == nil {
+		return org.ID, nil
+	}
+	if !errors.Is(err, db.ErrNotFound) {
+		return uuid.UUID{}, err
+	}
+
+	orgID := uuid.New()
+	slug := fmt.Sprintf("personal-%s", sub)
+	org, err = s.db.CreateOrganization(ctx, orgID, slug, "Personal", nil)
+	if err != nil {
+		if errors.Is(err, db.ErrConflict) {
+			// Another request may have created it concurrently.
+			org, err = s.db.GetPersonalOrgByUser(ctx, userID)
+			if err != nil {
+				return uuid.UUID{}, err
+			}
+			return org.ID, nil
+		}
+		return uuid.UUID{}, err
+	}
+
+	if err := s.db.AddOrgMember(ctx, org.ID, userID, "owner"); err != nil {
+		return uuid.UUID{}, err
+	}
+
+	return org.ID, nil
 }
 
 func (s *Server) getUser(c *gin.Context) (user, error) {
@@ -112,21 +179,10 @@ func (s *Server) getUser(c *gin.Context) (user, error) {
 	return u, nil
 }
 
-func (s *Server) getClerkUserEmail(ctx context.Context, sub string) (string, error) {
-	cu, err := clerkuser.Get(ctx, sub)
+func (s *Server) getWorkOSUserEmail(ctx context.Context, sub string) (string, error) {
+	wu, err := usermanagement.GetUser(ctx, usermanagement.GetUserOpts{User: sub})
 	if err != nil {
 		return "", err
 	}
-
-	if cu.PrimaryEmailAddressID == nil {
-		return "", errors.New("primary email not available from clerk")
-	}
-
-	for _, address := range cu.EmailAddresses {
-		if address.ID == *cu.PrimaryEmailAddressID {
-			return address.EmailAddress, nil
-		}
-	}
-
-	return "", errors.New("primary email address not found")
+	return wu.Email, nil
 }

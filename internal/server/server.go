@@ -8,8 +8,9 @@ import (
 	"strings"
 
 	"bin2.io/internal/db"
-	"github.com/clerk/clerk-sdk-go/v2"
+	"github.com/MicahParks/keyfunc/v3"
 	"github.com/gin-gonic/gin"
+	"github.com/workos/workos-go/v4/pkg/usermanagement"
 )
 
 type Server struct {
@@ -20,14 +21,28 @@ type Server struct {
 	registryJWTPrivateKey ed25519.PrivateKey
 	registryJWTPublicKey  ed25519.PublicKey
 	registryService       string
+	jwks                  keyfunc.Keyfunc
+	workosClientID        string
 }
 
 func New() (*Server, error) {
-	clerkSecretKey := os.Getenv("CLERK_SECRET_KEY")
-	if clerkSecretKey == "" {
-		return nil, fmt.Errorf("CLERK_SECRET_KEY is not defined")
+	workosAPIKey := os.Getenv("WORKOS_API_KEY")
+	if workosAPIKey == "" {
+		return nil, fmt.Errorf("WORKOS_API_KEY is not defined")
 	}
-	clerk.SetKey(clerkSecretKey)
+
+	workosClientID := os.Getenv("WORKOS_CLIENT_ID")
+	if workosClientID == "" {
+		return nil, fmt.Errorf("WORKOS_CLIENT_ID is not defined")
+	}
+
+	usermanagement.SetAPIKey(workosAPIKey)
+
+	jwksURL := fmt.Sprintf("https://api.workos.com/sso/jwks/%s", workosClientID)
+	jwks, err := keyfunc.NewDefault([]string{jwksURL})
+	if err != nil {
+		return nil, fmt.Errorf("could not initialize JWKS: %w", err)
+	}
 
 	cfg, err := db.NewConfigFromEnv()
 	if err != nil {
@@ -62,6 +77,8 @@ func New() (*Server, error) {
 		registryJWTPrivateKey: registryJWTPrivateKey,
 		registryJWTPublicKey:  registryJWTPublicKey,
 		registryService:       strings.TrimSpace(getenvDefault("REGISTRY_SERVICE", "")),
+		jwks:                  jwks,
+		workosClientID:        workosClientID,
 	}
 	s.addRoutes()
 	return s, nil

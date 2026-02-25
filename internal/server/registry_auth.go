@@ -104,7 +104,15 @@ func (s *Server) authenticateRegistryBasic(c *gin.Context) (registryAuthContext,
 	}
 
 	cred, err := parseAPIKeyCredential(strings.TrimSpace(password))
-	if err != nil || cred.UserID != registryRec.UserID {
+	if err != nil {
+		return registryAuthContext{}, errUnauthorized
+	}
+
+	isMember, err := s.db.IsOrgMember(c.Request.Context(), registryRec.OrgID, cred.UserID)
+	if err != nil {
+		return registryAuthContext{}, err
+	}
+	if !isMember {
 		return registryAuthContext{}, errUnauthorized
 	}
 
@@ -123,7 +131,7 @@ func (s *Server) authenticateRegistryBasic(c *gin.Context) (registryAuthContext,
 	}
 
 	return registryAuthContext{
-		userID:    registryRec.UserID,
+		userID:    cred.UserID,
 		namespace: namespace,
 		apiKeyID:  matchedKey.ID,
 	}, nil
