@@ -9,7 +9,7 @@ export default function Header() {
   const { user } = useAuth();
 
   return (
-    <div className="flex justify-between items-center p-2 shadow-sm">
+    <div className="flex justify-between items-center">
       <Link href="/dashboard" className="logo-mark"><Logo /></Link>
       <div>
         {user && (

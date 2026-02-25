@@ -24,7 +24,7 @@ export default function Commands(props: CommandProps) {
   });
 
   return (
-    <div className="flex flex-col mt-2 mb-2 bg-base-200 rounded p-2 gap-1">
+    <div className="flex flex-col bg-base-200 p-2 gap-1">
       <span><b>Login</b></span>
       <div className={`flex ${client === 'k8s' ? 'items-start' : 'items-center'}`}>
         <ClientSelect value={client} onChange={setClient} />

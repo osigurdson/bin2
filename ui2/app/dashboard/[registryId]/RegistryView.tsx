@@ -13,13 +13,10 @@ export default function RegistryView({ registryId }: { registryId: string }) {
   }
   return (
     <>
-      <Header />
-      <div className="w-full flex justify-center p-4">
-        <div className="w-full max-w-xl text-left">
-          <div className="mb-4"><b>bin2.io/{regInfo.name}</b> (22 repos / 109.4 GiB)</div>
-          <Commands id={regInfo.id} name={regInfo.name} apiKey="555" />
-          <Repositories />
-        </div>
+      <div className="space-y-6">
+        <div className="mb-4">Registry: <b>bin2.io/{regInfo.name}</b> (22 repos / 109.4 GiB)</div>
+        <Commands id={regInfo.id} name={regInfo.name} apiKey="555" />
+        <Repositories />
       </div>
     </>
   )

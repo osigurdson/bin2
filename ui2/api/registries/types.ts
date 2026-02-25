@@ -3,4 +3,6 @@ export interface Registry {
   name: string;
 }
 
-
+export interface ListRegistriesResponse {
+  registries: Registry[];
+}
