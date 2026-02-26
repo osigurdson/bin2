@@ -64,6 +64,65 @@ func (s *Server) listRegistriesHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+func (s *Server) getRegistryByNameHandler(c *gin.Context) {
+	u, err := s.getUser(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	name := strings.TrimSpace(c.Param("name"))
+	if !validRegistryName(name) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "registry not found"})
+		return
+	}
+
+	registry, err := s.db.GetRegistryByName(c.Request.Context(), name)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "registry not found"})
+			return
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get registry"})
+		return
+	}
+
+	if registry.OrgID != u.orgID {
+		c.JSON(http.StatusNotFound, gin.H{"error": "registry not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, registryResponse{
+		ID:   registry.ID.String(),
+		Name: registry.Name,
+	})
+}
+
+func (s *Server) getRegistryExistsHandler(c *gin.Context) {
+	name := strings.TrimSpace(c.Param("name"))
+	if !validRegistryName(name) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad registry name"})
+		return
+	}
+
+	_, err := s.db.GetRegistryByName(c.Request.Context(), name)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			c.JSON(http.StatusOK, false)
+			return
+		}
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, true)
+}
+
 func (s *Server) addRegistryHandler(c *gin.Context) {
 	u, err := s.getUser(c)
 	if err != nil {

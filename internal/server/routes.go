@@ -33,6 +33,8 @@ func (s *Server) addRoutes() {
 	registries := api.Group("/registries")
 	registries.Use(s.authMiddleware())
 	registries.GET("", s.listRegistriesHandler)
+	registries.GET("/:name", s.getRegistryByNameHandler)
+	registries.GET("/exists", s.getRegistryExistsHandler)
 	registries.POST("", s.addRegistryHandler)
 
 	apikeys := api.Group("/api-keys")

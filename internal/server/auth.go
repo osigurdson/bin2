@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -33,13 +34,15 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := strings.TrimSpace(c.GetHeader("Authorization"))
 		if authHeader == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			slog.Debug("Auth", slog.String("Bearer", "Missing header"))
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized - no header"})
 			return
 		}
 
 		const prefix = "Bearer "
 		if len(authHeader) < len(prefix) || !strings.EqualFold(authHeader[:len(prefix)], prefix) {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			slog.Debug("Auth", slog.String("Bearer", "Format"))
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized - bearer format"})
 			return
 		}
 		tokenString := strings.TrimSpace(authHeader[len(prefix):])
@@ -52,13 +55,15 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 			jwt.WithAudience(s.workosClientID),
 		)
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			slog.Debug("Auth", slog.String("Bearer", "Claims"))
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized - jwt"})
 			return
 		}
 
 		sub := strings.TrimSpace(claims.Subject)
 		if sub == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			slog.Debug("Auth", slog.String("Bearer", "Missing sub"))
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized - sub"})
 			return
 		}
 

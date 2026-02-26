@@ -9,7 +9,7 @@ export default function Dashboard() {
   }
 
   if (data.registries.length == 0) {
-
+    return <div>no reg</div>;
   }
 
   return (

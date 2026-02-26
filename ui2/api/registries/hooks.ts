@@ -1,25 +1,66 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAccessToken } from '@workos-inc/authkit-nextjs/components';
 import { apiV1Url } from '@/api/client';
 import { ListRegistriesResponse, Registry } from './types';
 
-export function useGetRegistry(registryId: string) {
+export class CreateRegistryError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'CreateRegistryError';
+    this.status = status;
+  }
+}
+
+export function useGetRegistry(registryName: string) {
   const { getAccessToken } = useAccessToken();
 
   return useQuery({
-    queryKey: ['registry', registryId],
+    queryKey: ['registry', registryName],
     queryFn: async () => {
       const token = await getAccessToken();
-      const res = await fetch(apiV1Url(`/registries/${registryId}`), {
+      const res = await fetch(apiV1Url(`/registries/${encodeURIComponent(registryName)}`), {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) {
+        if (res.status === 404) {
+          return null;
+        }
         throw new Error('Network response issue');
       }
       return res.json() as Promise<Registry>;
     },
-    enabled: !!registryId,
+    enabled: !!registryName,
   });
+}
+
+export function useGetRegistryExists(registryName: string) {
+  const { getAccessToken } = useAccessToken();
+
+  return useQuery({
+    queryKey: ['registry', registryName],
+    queryFn: async () => {
+      const token = await getAccessToken();
+      if (!token) {
+        throw new Error('No access token');
+      }
+      const res = await fetch(
+        apiV1Url(`/registries/exists?name=${encodeURIComponent(registryName)}`), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      }
+      );
+      if (!res.ok) {
+        throw new Error('Network response issue');
+      }
+      return res.json() as Promise<boolean>;
+    },
+    enabled: !!registryName,
+  });
+}
+
+export function useGetRegistryByName(registryName: string) {
+  return useGetRegistry(registryName);
 }
 
 export function useGetRegistries() {
@@ -38,4 +79,42 @@ export function useGetRegistries() {
       return res.json() as Promise<ListRegistriesResponse>;
     }
   })
+}
+
+export function useCreateRegistry() {
+  const queryClient = useQueryClient();
+  const { getAccessToken } = useAccessToken();
+
+  return useMutation({
+    mutationFn: async ({ name }: { name: string }) => {
+      const token = await getAccessToken();
+      if (!token) {
+        throw new CreateRegistryError(401, 'Missing access token');
+      }
+
+      const res = await fetch(apiV1Url('/registries'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name }),
+      });
+
+      if (!res.ok) {
+        throw new CreateRegistryError(res.status, `registry create failed (${res.status})`);
+      }
+
+      return res.json() as Promise<Registry>;
+    },
+    onSuccess: (createdRegistry) => {
+      queryClient.setQueryData<ListRegistriesResponse>(['registries'], (previous) => {
+        const registries = previous?.registries ?? [];
+        if (registries.some((registry) => registry.id === createdRegistry.id)) {
+          return previous ?? { registries: [createdRegistry] };
+        }
+        return { registries: [createdRegistry, ...registries] };
+      });
+    },
+  });
 }
