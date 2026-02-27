@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
@@ -23,6 +24,7 @@ type Server struct {
 	registryService       string
 	jwks                  keyfunc.Keyfunc
 	workosClientID        string
+	apiKeyEncryptionKey   [32]byte
 }
 
 func New() (*Server, error) {
@@ -35,6 +37,17 @@ func New() (*Server, error) {
 	if workosClientID == "" {
 		return nil, fmt.Errorf("WORKOS_CLIENT_ID is not defined")
 	}
+
+	apiKeyEncKeyHex := os.Getenv("API_KEY_ENCRYPTION_KEY")
+	if apiKeyEncKeyHex == "" {
+		return nil, fmt.Errorf("API_KEY_ENCRYPTION_KEY is not defined")
+	}
+	apiKeyEncKeyBytes, err := hex.DecodeString(apiKeyEncKeyHex)
+	if err != nil || len(apiKeyEncKeyBytes) != 32 {
+		return nil, fmt.Errorf("API_KEY_ENCRYPTION_KEY must be a 64-char hex string (32 bytes)")
+	}
+	var apiKeyEncryptionKey [32]byte
+	copy(apiKeyEncryptionKey[:], apiKeyEncKeyBytes)
 
 	usermanagement.SetAPIKey(workosAPIKey)
 
@@ -79,6 +92,7 @@ func New() (*Server, error) {
 		registryService:       strings.TrimSpace(getenvDefault("REGISTRY_SERVICE", "")),
 		jwks:                  jwks,
 		workosClientID:        workosClientID,
+		apiKeyEncryptionKey:   apiKeyEncryptionKey,
 	}
 	s.addRoutes()
 	return s, nil

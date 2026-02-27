@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"bin2.io/internal/db"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -56,7 +57,7 @@ func (s *Server) registryTokenHandler(c *gin.Context) {
 	}
 
 	requestedScopes := parseRequestedTokenScopes(c.QueryArray("scope"))
-	grantedScopes := grantRegistryTokenScopes(auth.namespace, requestedScopes)
+	grantedScopes := grantRegistryTokenScopes(auth.registryID, auth.namespace, auth.apiScopes, requestedScopes)
 
 	token, expiresAt, issuedAt, err := s.issueRegistryToken(auth.namespace, service, grantedScopes)
 	if err != nil {
@@ -180,7 +181,7 @@ func parseRequestedTokenScopes(rawScopes []string) []registryTokenAccess {
 	return scopes
 }
 
-func grantRegistryTokenScopes(namespace string, requested []registryTokenAccess) []registryTokenAccess {
+func grantRegistryTokenScopes(registryID uuid.UUID, namespace string, apiScopes []db.APIKeyScope, requested []registryTokenAccess) []registryTokenAccess {
 	type key struct {
 		typeName string
 		name     string
@@ -194,15 +195,18 @@ func grantRegistryTokenScopes(namespace string, requested []registryTokenAccess)
 		if registryNamespace(req.Name) != namespace {
 			continue
 		}
+
+		allowedActions := grantRequestedActions(registryID, req.Name, apiScopes, req.Actions)
+		if len(allowedActions) == 0 {
+			continue
+		}
+
 		k := key{typeName: req.Type, name: req.Name}
 		if _, ok := merged[k]; !ok {
 			merged[k] = map[string]struct{}{}
 		}
-		for _, action := range req.Actions {
-			switch action {
-			case "pull", "push", "*":
-				merged[k][action] = struct{}{}
-			}
+		for _, action := range allowedActions {
+			merged[k][action] = struct{}{}
 		}
 	}
 
@@ -240,4 +244,65 @@ func grantRegistryTokenScopes(namespace string, requested []registryTokenAccess)
 	})
 
 	return out
+}
+
+func grantRequestedActions(registryID uuid.UUID, repository string, apiScopes []db.APIKeyScope, requested []string) []string {
+	granted := map[string]struct{}{}
+	for _, requestedAction := range requested {
+		for _, candidate := range expandRequestedRegistryAction(requestedAction) {
+			if apiKeyScopeAllowsAction(registryID, repository, candidate, apiScopes) {
+				granted[candidate] = struct{}{}
+			}
+		}
+	}
+
+	out := make([]string, 0, len(granted))
+	for action := range granted {
+		out = append(out, action)
+	}
+	slices.Sort(out)
+	return out
+}
+
+func expandRequestedRegistryAction(action string) []string {
+	switch strings.TrimSpace(action) {
+	case "pull":
+		return []string{"pull"}
+	case "push":
+		return []string{"push"}
+	case "*":
+		return []string{"pull", "push"}
+	default:
+		return nil
+	}
+}
+
+func apiKeyScopeAllowsAction(registryID uuid.UUID, repository, action string, apiScopes []db.APIKeyScope) bool {
+	for _, scope := range apiScopes {
+		if scope.RegistryID != registryID {
+			continue
+		}
+		if scope.Repository != nil && *scope.Repository != repoLeaf(repository) {
+			continue
+		}
+		if apiKeyPermissionAllows(scope.Permission, action) {
+			return true
+		}
+	}
+	return false
+}
+
+// apiKeyPermissionAllows reports whether the given permission level grants the
+// requested registry action. Admin currently grants the same token-level access
+// as write (pull + push); it is reserved for future privileged operations such
+// as repository deletion or policy management that sit outside the token scope.
+func apiKeyPermissionAllows(permission db.APIKeyPermission, action string) bool {
+	switch action {
+	case "pull":
+		return permission == db.APIKeyPermissionRead || permission == db.APIKeyPermissionWrite || permission == db.APIKeyPermissionAdmin
+	case "push":
+		return permission == db.APIKeyPermissionWrite || permission == db.APIKeyPermissionAdmin
+	default:
+		return false
+	}
 }

@@ -41,6 +41,17 @@ func registryNamespace(repo string) string {
 	return repo[:idx]
 }
 
+// repoLeaf strips the registry namespace prefix from a full OCI repository
+// path, returning only the portion stored in api_key_scopes.
+// e.g. "myregistry/group/app" → "group/app"
+func repoLeaf(repo string) string {
+	idx := strings.Index(repo, "/")
+	if idx == -1 {
+		return repo
+	}
+	return repo[idx+1:]
+}
+
 func validRepoName(repo string) bool {
 	if repo == "" || strings.Contains(repo, "..") {
 		return false

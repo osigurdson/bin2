@@ -22,9 +22,24 @@ type APIKey = {
   prefix: string;
   createdAt: string;
   lastUsedAt: string | null;
+  scopes: APIKeyScope[];
+};
+
+type APIKeyScope = {
+  registryId: string;
+  repository: string | null;
+  permission: "read" | "write" | "admin";
+  createdAt: string;
 };
 
 type CreateAPIKeyResponse = {
+  apiKey: APIKey;
+  secretKey: string;
+};
+
+type AddRegistryResponse = {
+  id: string;
+  name: string;
   apiKey: APIKey;
   secretKey: string;
 };
@@ -44,7 +59,6 @@ type OnboardingSetup = {
 };
 
 const keyNameRe = /^[A-Za-z0-9._-]{2,8}$/;
-const defaultOnboardingKeyNames = ["default", "main", "cli", "local"];
 const localAPIBaseURL = "http://localhost:5000";
 const productionAPIBaseURL = "https://bin2.nthesis.ai";
 
@@ -79,6 +93,11 @@ function formatDate(ts: string | null): string {
     month: "short",
     day: "numeric",
   });
+}
+
+function describeScope(scope: APIKeyScope): string {
+  const target = scope.repository ? scope.repository : "entire registry";
+  return `${scope.permission} on ${target}`;
 }
 
 function RegistryCommandPreview({ name }: { name: string }) {
@@ -125,7 +144,8 @@ export default function DashboardPage() {
   const [onboardingSetup, setOnboardingSetup] = useState<OnboardingSetup | null>(null);
   const [copiedCommandKey, setCopiedCommandKey] = useState<string | null>(null);
 
-  const registryNamespace = registries[0]?.name ?? "";
+  const activeRegistry = registries[0] ?? null;
+  const registryNamespace = activeRegistry?.name ?? "";
   const registryForCommands = registryNamespace || "{your-registry}";
 
   const maskedSecretKey = useMemo(() => {
@@ -163,7 +183,7 @@ export default function DashboardPage() {
       try {
         const token = await getToken();
         if (!token) {
-          throw new Error("missing clerk token");
+          throw new Error("missing token");
         }
 
         const registryRequest = fetch(`${apiBaseUrl}/api/v1/registries`, {
@@ -245,29 +265,27 @@ export default function DashboardPage() {
     return null;
   };
 
-  const createDefaultOnboardingAPIKey = async (token: string): Promise<CreateAPIKeyResponse> => {
-    for (const candidateName of defaultOnboardingKeyNames) {
-      const response = await fetch(`${apiBaseUrl}/api/v1/api-keys`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ keyName: candidateName }),
-      });
-
-      if (response.status === 409) {
-        continue;
-      }
-
-      if (!response.ok) {
-        throw new Error(`api key create failed (${response.status})`);
-      }
-
-      return (await response.json()) as CreateAPIKeyResponse;
-    }
-
-    throw new Error("could not create onboarding API key");
+  const createScopedAdminKey = async (
+    token: string,
+    registry: Registry,
+    keyName: string,
+  ): Promise<Response> => {
+    return fetch(`${apiBaseUrl}/api/v1/api-keys`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        keyName,
+        scopes: [
+          {
+            registryId: registry.id,
+            permission: "admin",
+          },
+        ],
+      }),
+    });
   };
 
   const handleCreateRegistry = async (e: SyntheticEvent<HTMLFormElement>) => {
@@ -289,7 +307,7 @@ export default function DashboardPage() {
     try {
       const token = await getToken();
       if (!token) {
-        throw new Error("missing clerk token");
+        throw new Error("missing token");
       }
 
       const registryRes = await fetch(`${apiBaseUrl}/api/v1/registries`, {
@@ -309,25 +327,18 @@ export default function DashboardPage() {
         throw new Error(`registry create failed (${registryRes.status})`);
       }
 
-      const createdRegistry = (await registryRes.json()) as Registry;
-      setRegistries([createdRegistry]);
+      const result = (await registryRes.json()) as AddRegistryResponse;
+      setRegistries([{ id: result.id, name: result.name }]);
       setRegistryName("");
-
-      try {
-        const createdKey = await createDefaultOnboardingAPIKey(token);
-        setAPIKeys((previous) => [createdKey.apiKey, ...previous]);
-        setNewSecretKey(createdKey.secretKey);
-        setIsSecretVisible(false);
-        setIsSecretCopied(false);
-        setOnboardingSetup({
-          registryName: createdRegistry.name,
-          apiKeyName: createdKey.apiKey.keyName,
-          secretKey: createdKey.secretKey,
-        });
-      } catch (keyErr) {
-        console.error(keyErr);
-        setAPIKeyError("Registry created, but could not create the default API key. Please create one below.");
-      }
+      setAPIKeys((previous) => [result.apiKey, ...previous]);
+      setNewSecretKey(result.secretKey);
+      setIsSecretVisible(false);
+      setIsSecretCopied(false);
+      setOnboardingSetup({
+        registryName: result.name,
+        apiKeyName: result.apiKey.keyName,
+        secretKey: result.secretKey,
+      });
     } catch (err) {
       console.error(err);
       setRegistryError("Could not create registry.");
@@ -350,19 +361,17 @@ export default function DashboardPage() {
     setAPIKeyError(null);
 
     try {
-      const token = await getToken();
-      if (!token) {
-        throw new Error("missing clerk token");
+      if (!activeRegistry) {
+        setAPIKeyError("Create a registry before creating an API key.");
+        return;
       }
 
-      const res = await fetch(`${apiBaseUrl}/api/v1/api-keys`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ keyName: name }),
-      });
+      const token = await getToken();
+      if (!token) {
+        throw new Error("missing token");
+      }
+
+      const res = await createScopedAdminKey(token, activeRegistry, name);
 
       if (res.status === 409) {
         setAPIKeyError("An API key with that name already exists.");
@@ -402,7 +411,7 @@ export default function DashboardPage() {
     try {
       const token = await getToken();
       if (!token) {
-        throw new Error("missing clerk token");
+        throw new Error("missing token");
       }
 
       const res = await fetch(`${apiBaseUrl}/api/v1/api-keys/${id}`, {
@@ -579,6 +588,7 @@ export default function DashboardPage() {
               <div className="dashboard-api-heading">
                 <h2>API Keys</h2>
                 <p>Create and manage keys for docker login and registry pushes/pulls.</p>
+                <p>Keys created here get admin access to <code>{registryForCommands}</code>.</p>
               </div>
 
               <form onSubmit={handleCreateAPIKey} className="dashboard-api-create-form">
@@ -671,6 +681,11 @@ export default function DashboardPage() {
                             <p className="dashboard-api-key-name">{apiKey.keyName}</p>
                             <p className="dashboard-api-key-dates">
                               Created {formatDate(apiKey.createdAt)} · Last used {formatDate(apiKey.lastUsedAt)}
+                            </p>
+                            <p className="dashboard-api-key-dates">
+                              {apiKey.scopes.length > 0
+                                ? apiKey.scopes.map(describeScope).join(" · ")
+                                : "No scopes"}
                             </p>
                           </div>
                           <button

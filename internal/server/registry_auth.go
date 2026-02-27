@@ -12,9 +12,11 @@ import (
 )
 
 type registryAuthContext struct {
-	userID    uuid.UUID
-	namespace string
-	apiKeyID  uuid.UUID
+	userID     uuid.UUID
+	namespace  string
+	registryID uuid.UUID
+	apiKeyID   uuid.UUID
+	apiScopes  []db.APIKeyScope
 }
 
 type registryScopeRequirement struct {
@@ -85,17 +87,18 @@ func (s *Server) registryBearerAuthMiddleware() gin.HandlerFunc {
 }
 
 func (s *Server) authenticateRegistryBasic(c *gin.Context) (registryAuthContext, error) {
-	username, password, ok := c.Request.BasicAuth()
+	_, password, ok := c.Request.BasicAuth()
 	if !ok {
 		return registryAuthContext{}, errUnauthorized
 	}
 
-	namespace := strings.TrimSpace(username)
-	if !validRegistryName(namespace) {
+	providedKey := strings.TrimSpace(password)
+	prefix, err := parseAPIKeyPrefix(providedKey)
+	if err != nil {
 		return registryAuthContext{}, errUnauthorized
 	}
 
-	registryRec, err := s.db.GetRegistryByName(c.Request.Context(), namespace)
+	apiKeyRec, err := s.db.GetAPIKeyByPrefix(c.Request.Context(), prefix)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			return registryAuthContext{}, errUnauthorized
@@ -103,37 +106,36 @@ func (s *Server) authenticateRegistryBasic(c *gin.Context) (registryAuthContext,
 		return registryAuthContext{}, err
 	}
 
-	cred, err := parseAPIKeyCredential(strings.TrimSpace(password))
-	if err != nil {
+	decrypted, err := decryptAPIKey(apiKeyRec.SecretEncrypted, s.apiKeyEncryptionKey)
+	if err != nil || !matchAPIKey(providedKey, decrypted) {
 		return registryAuthContext{}, errUnauthorized
 	}
 
-	isMember, err := s.db.IsOrgMember(c.Request.Context(), registryRec.OrgID, cred.UserID)
+	apiScopes, err := s.db.ListAPIKeyScopesByAPIKeyID(c.Request.Context(), apiKeyRec.ID)
 	if err != nil {
 		return registryAuthContext{}, err
 	}
-	if !isMember {
+	if len(apiScopes) == 0 {
 		return registryAuthContext{}, errUnauthorized
 	}
 
-	keys, err := s.db.ListAPIKeysByUser(c.Request.Context(), cred.UserID)
+	// Derive the registry from the key's scope. Keys are currently scoped to
+	// exactly one registry, so the first scope's registry is authoritative.
+	registryRec, err := s.db.GetRegistryByID(c.Request.Context(), apiScopes[0].RegistryID)
 	if err != nil {
 		return registryAuthContext{}, err
 	}
 
-	matchedKey, err := matchAPIKeyCredential(cred, keys)
-	if err != nil {
-		return registryAuthContext{}, err
-	}
-
-	if _, err := s.db.UpdateAPIKeyLastUsedAt(c.Request.Context(), cred.UserID, matchedKey.ID); err != nil {
+	if _, err := s.db.UpdateAPIKeyLastUsedAt(c.Request.Context(), apiKeyRec.ID); err != nil {
 		logError(err)
 	}
 
 	return registryAuthContext{
-		userID:    cred.UserID,
-		namespace: namespace,
-		apiKeyID:  matchedKey.ID,
+		userID:     apiKeyRec.UserID,
+		namespace:  registryRec.Name,
+		registryID: registryRec.ID,
+		apiKeyID:   apiKeyRec.ID,
+		apiScopes:  apiScopes,
 	}, nil
 }
 

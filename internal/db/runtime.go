@@ -10,8 +10,9 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("record not found")
-	ErrConflict = errors.New("conflict")
+	ErrNotFound     = errors.New("record not found")
+	ErrConflict     = errors.New("conflict")
+	ErrScopeConflict = errors.New("scope conflict")
 )
 
 type DB struct {

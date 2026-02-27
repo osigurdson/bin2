@@ -25,6 +25,12 @@ type registryResponse struct {
 	Name string `json:"name"`
 }
 
+type addRegistryResponse struct {
+	ID     string         `json:"id"`
+	Name   string         `json:"name"`
+	APIKey apiKeyResponse `json:"apiKey"`
+}
+
 type listRegistriesResponse struct {
 	Registries []registryResponse `json:"registries"`
 }
@@ -143,9 +149,26 @@ func (s *Server) addRegistryHandler(c *gin.Context) {
 		return
 	}
 
-	registry, err := s.db.AddRegistry(c.Request.Context(), db.AddRegistryArgs{
-		OrgID: u.orgID,
-		Name:  req.Name,
+	fullKey, prefix, err := generateAPIKey()
+	if err != nil {
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create registry"})
+		return
+	}
+	encrypted, err := encryptAPIKey(fullKey, s.apiKeyEncryptionKey)
+	if err != nil {
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create registry"})
+		return
+	}
+
+	result, err := s.db.AddRegistryWithKey(c.Request.Context(), db.AddRegistryWithKeyArgs{
+		OrgID:           u.orgID,
+		Name:            req.Name,
+		UserID:          u.id,
+		KeyName:         "default",
+		SecretEncrypted: encrypted,
+		Prefix:          prefix,
 	})
 	if err != nil {
 		if errors.Is(err, db.ErrConflict) {
@@ -157,8 +180,9 @@ func (s *Server) addRegistryHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, registryResponse{
-		ID:   registry.ID.String(),
-		Name: registry.Name,
+	c.JSON(http.StatusCreated, addRegistryResponse{
+		ID:     result.Registry.ID.String(),
+		Name:   result.Registry.Name,
+		APIKey: s.buildAPIKeyResponse(result.APIKey, fullKey),
 	})
 }
