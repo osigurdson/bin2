@@ -16,7 +16,7 @@ export default function Dashboard() {
     <div>
       <ul>
         {data.registries.map((registry) => (
-          <li><RegistryCard name={registry.name} /></li>
+          <li key={registry.id}><RegistryCard name={registry.name} /></li>
         ))}
       </ul>
     </div>
