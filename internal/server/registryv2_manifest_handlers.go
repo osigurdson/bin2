@@ -19,6 +19,11 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 	if !s.ensureRepoAuthorized(c, repo) {
 		return
 	}
+	auth, err := s.getRegistryAuth(c)
+	if err != nil {
+		writeOCIError(c, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
+		return
+	}
 	if !validReference(reference) {
 		writeOCIError(c, http.StatusBadRequest, "MANIFEST_INVALID", "invalid manifest reference")
 		return
@@ -42,11 +47,18 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 		return
 	}
 
+	normalizedBlobDigests := make([]string, 0, len(blobDigests))
+	seenBlobDigests := make(map[string]struct{}, len(blobDigests))
 	for _, digest := range blobDigests {
 		digestHex, err := parseDigest(digest)
 		if err != nil {
 			writeOCIError(c, http.StatusBadRequest, "MANIFEST_INVALID", "manifest references invalid digest")
 			return
+		}
+		normalizedDigest := "sha256:" + digestHex
+		if _, ok := seenBlobDigests[normalizedDigest]; !ok {
+			seenBlobDigests[normalizedDigest] = struct{}{}
+			normalizedBlobDigests = append(normalizedBlobDigests, normalizedDigest)
 		}
 		exists, err := s.registryStorage.BlobExists(c.Request.Context(), digestHex)
 		if err != nil {
@@ -59,19 +71,35 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 		}
 	}
 
+	sum := sha256.Sum256(manifestBytes)
+	manifestDigest := "sha256:" + hex.EncodeToString(sum[:])
+
 	contentType := manifestContentType(c.GetHeader("Content-Type"))
 	if err := s.registryStorage.StoreManifest(c.Request.Context(), repo, reference, manifestBytes, contentType); err != nil {
 		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to store manifest")
 		return
 	}
 
-	sum := sha256.Sum256(manifestBytes)
-	manifestDigest := "sha256:" + hex.EncodeToString(sum[:])
 	if reference != manifestDigest {
 		if err := s.registryStorage.StoreManifest(c.Request.Context(), repo, manifestDigest, manifestBytes, contentType); err != nil {
 			writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to store digest manifest")
 			return
 		}
+	}
+
+	references := []string{reference}
+	if reference != manifestDigest {
+		references = append(references, manifestDigest)
+	}
+	if err := s.indexRegistryManifest(
+		c.Request.Context(),
+		auth.registryID,
+		repo,
+		manifestDigest,
+		references,
+		normalizedBlobDigests,
+	); err != nil {
+		logError(fmt.Errorf("could not update registry manifest index for %s@%s: %w", repo, reference, err))
 	}
 
 	c.Header("Docker-Content-Digest", manifestDigest)

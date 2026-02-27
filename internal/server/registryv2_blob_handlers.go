@@ -106,6 +106,9 @@ func (s *Server) finalizeBlobUploadHandler(c *gin.Context, repo, uuid string) {
 	}
 	if exists {
 		_ = s.registryStorage.DeleteUpload(c.Request.Context(), uuid)
+		if err := s.trackRegistryBlobDigest(c.Request.Context(), digest); err != nil {
+			logError(fmt.Errorf("could not update registry blob index for %s: %w", digest, err))
+		}
 		c.Header("Location", fmt.Sprintf("/v2/%s/blobs/%s", repo, digest))
 		c.Header("Docker-Content-Digest", digest)
 		c.Status(http.StatusCreated)
@@ -115,6 +118,9 @@ func (s *Server) finalizeBlobUploadHandler(c *gin.Context, repo, uuid string) {
 	if err := s.registryStorage.StoreBlobFromUpload(c.Request.Context(), uuid, digestHex); err != nil {
 		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to finalize blob upload")
 		return
+	}
+	if err := s.trackRegistryBlobDigest(c.Request.Context(), digest); err != nil {
+		logError(fmt.Errorf("could not update registry blob index for %s: %w", digest, err))
 	}
 
 	c.Header("Location", fmt.Sprintf("/v2/%s/blobs/%s", repo, digest))

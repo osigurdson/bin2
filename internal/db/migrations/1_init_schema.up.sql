@@ -39,6 +39,20 @@ CREATE TABLE registries (
 CREATE UNIQUE INDEX unique_registry_nam ON registries (name);
 CREATE INDEX idx_registry_org_id ON registries (org_id);
 
+CREATE TABLE registry_repositories (
+  id UUID PRIMARY KEY,
+  registry_id UUID NOT NULL
+    REFERENCES registries(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_pushed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (name <> ''),
+  UNIQUE (registry_id, name)
+);
+
+CREATE INDEX idx_registry_repositories_registry_id
+  ON registry_repositories (registry_id, name);
+
 -- api keys
 CREATE TYPE api_key_permission AS ENUM ('read', 'write', 'admin');
 
@@ -62,18 +76,54 @@ CREATE TABLE api_key_scopes (
     REFERENCES api_keys(id) ON DELETE CASCADE,
   registry_id UUID NOT NULL
     REFERENCES registries(id) ON DELETE CASCADE,
-  repository TEXT,
+  repository_id UUID
+    REFERENCES registry_repositories(id) ON DELETE CASCADE,
   permission api_key_permission NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CHECK (repository IS NULL OR repository <> '')
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_api_key_scopes_api_key_id ON api_key_scopes (api_key_id);
-CREATE INDEX idx_api_key_scopes_registry_repo ON api_key_scopes (registry_id, repository);
+CREATE INDEX idx_api_key_scopes_registry_repo_id ON api_key_scopes (registry_id, repository_id);
 CREATE UNIQUE INDEX unique_api_key_registry_scope
   ON api_key_scopes (api_key_id, registry_id)
-  WHERE repository IS NULL;
+  WHERE repository_id IS NULL;
 
 CREATE UNIQUE INDEX unique_api_key_repository_scope
-  ON api_key_scopes (api_key_id, registry_id, repository)
-  WHERE repository IS NOT NULL;
+  ON api_key_scopes (api_key_id, registry_id, repository_id)
+  WHERE repository_id IS NOT NULL;
+
+-- registry blob GC index
+CREATE TABLE registry_blobs (
+  digest TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (digest ~ '^sha256:[a-f0-9]{64}$')
+);
+
+CREATE TABLE registry_manifest_refs (
+  repository_id UUID NOT NULL
+    REFERENCES registry_repositories(id) ON DELETE CASCADE,
+  reference TEXT NOT NULL,
+  manifest_digest TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (repository_id, reference),
+  CHECK (reference <> ''),
+  CHECK (manifest_digest ~ '^sha256:[a-f0-9]{64}$')
+);
+
+CREATE INDEX idx_registry_manifest_refs_manifest
+  ON registry_manifest_refs (repository_id, manifest_digest);
+
+CREATE TABLE registry_manifest_blob_refs (
+  repository_id UUID NOT NULL
+    REFERENCES registry_repositories(id) ON DELETE CASCADE,
+  manifest_digest TEXT NOT NULL,
+  blob_digest TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (repository_id, manifest_digest, blob_digest),
+  CHECK (manifest_digest ~ '^sha256:[a-f0-9]{64}$'),
+  CHECK (blob_digest ~ '^sha256:[a-f0-9]{64}$')
+);
+
+CREATE INDEX idx_registry_manifest_blob_refs_blob
+  ON registry_manifest_blob_refs (blob_digest);

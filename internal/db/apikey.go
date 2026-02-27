@@ -16,29 +16,30 @@ const (
 )
 
 type APIKeyScope struct {
-	ID         uuid.UUID
-	APIKeyID   uuid.UUID
-	RegistryID uuid.UUID
-	Repository *string
-	Permission APIKeyPermission
-	CreatedAt  time.Time
+	ID           uuid.UUID
+	APIKeyID     uuid.UUID
+	RegistryID   uuid.UUID
+	RepositoryID *uuid.UUID
+	Repository   *string
+	Permission   APIKeyPermission
+	CreatedAt    time.Time
 }
 
 type APIKey struct {
-	ID               uuid.UUID
-	UserID           uuid.UUID
-	KeyName          string
-	Prefix           string
-	SecretEncrypted  string
-	CreatedAt        time.Time
-	LastUsedAt       *time.Time
-	Scopes           []APIKeyScope
+	ID              uuid.UUID
+	UserID          uuid.UUID
+	KeyName         string
+	Prefix          string
+	SecretEncrypted string
+	CreatedAt       time.Time
+	LastUsedAt      *time.Time
+	Scopes          []APIKeyScope
 }
 
 type AddAPIKeyScopeInput struct {
-	RegistryID uuid.UUID
-	Repository *string
-	Permission APIKeyPermission
+	RegistryID   uuid.UUID
+	RepositoryID *uuid.UUID
+	Permission   APIKeyPermission
 }
 
 type AddAPIKeyArgs struct {
@@ -84,16 +85,16 @@ func (d *DB) AddAPIKey(ctx context.Context, args AddAPIKeyArgs) (APIKey, error) 
 		return APIKey{}, err
 	}
 
-	const insertScopeCmd = `INSERT INTO api_key_scopes (id, api_key_id, registry_id, repository, permission)
+	const insertScopeCmd = `INSERT INTO api_key_scopes (id, api_key_id, registry_id, repository_id, permission)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING created_at`
 	for _, scope := range args.Scopes {
 		apiKeyScope := APIKeyScope{
-			ID:         uuid.New(),
-			APIKeyID:   apiKey.ID,
-			RegistryID: scope.RegistryID,
-			Repository: scope.Repository,
-			Permission: scope.Permission,
+			ID:           uuid.New(),
+			APIKeyID:     apiKey.ID,
+			RegistryID:   scope.RegistryID,
+			RepositoryID: scope.RepositoryID,
+			Permission:   scope.Permission,
 		}
 		err = tx.QueryRow(
 			ctx,
@@ -101,7 +102,7 @@ func (d *DB) AddAPIKey(ctx context.Context, args AddAPIKeyArgs) (APIKey, error) 
 			apiKeyScope.ID,
 			apiKeyScope.APIKeyID,
 			apiKeyScope.RegistryID,
-			apiKeyScope.Repository,
+			apiKeyScope.RepositoryID,
 			apiKeyScope.Permission,
 		).Scan(&apiKeyScope.CreatedAt)
 		if err != nil {
@@ -116,6 +117,12 @@ func (d *DB) AddAPIKey(ctx context.Context, args AddAPIKeyArgs) (APIKey, error) 
 	if err := tx.Commit(ctx); err != nil {
 		return APIKey{}, err
 	}
+
+	scopes, err := d.ListAPIKeyScopesByAPIKeyID(ctx, apiKey.ID)
+	if err != nil {
+		return APIKey{}, err
+	}
+	apiKey.Scopes = scopes
 	return apiKey, nil
 }
 
@@ -180,10 +187,12 @@ func (d *DB) GetAPIKeyByPrefix(ctx context.Context, prefix string) (APIKey, erro
 }
 
 func (d *DB) ListAPIKeyScopesByAPIKeyID(ctx context.Context, apiKeyID uuid.UUID) ([]APIKeyScope, error) {
-	const cmd = `SELECT id, api_key_id, registry_id, repository, permission, created_at
-		FROM api_key_scopes
-		WHERE api_key_id = $1
-		ORDER BY created_at ASC`
+	const cmd = `SELECT s.id, s.api_key_id, s.registry_id, s.repository_id, rr.name, s.permission, s.created_at
+		FROM api_key_scopes s
+		LEFT JOIN registry_repositories rr
+		  ON rr.id = s.repository_id
+		WHERE s.api_key_id = $1
+		ORDER BY s.created_at ASC`
 	rows, err := d.conn.Query(ctx, cmd, apiKeyID)
 	if err != nil {
 		return nil, err
@@ -197,6 +206,7 @@ func (d *DB) ListAPIKeyScopesByAPIKeyID(ctx context.Context, apiKeyID uuid.UUID)
 			&scope.ID,
 			&scope.APIKeyID,
 			&scope.RegistryID,
+			&scope.RepositoryID,
 			&scope.Repository,
 			&scope.Permission,
 			&scope.CreatedAt,

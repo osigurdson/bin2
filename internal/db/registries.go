@@ -95,7 +95,7 @@ func (d *DB) AddRegistryWithKey(ctx context.Context, args AddRegistryWithKeyArgs
 		RegistryID: registry.ID,
 		Permission: APIKeyPermissionAdmin,
 	}
-	const insertScopeCmd = `INSERT INTO api_key_scopes (id, api_key_id, registry_id, repository, permission)
+	const insertScopeCmd = `INSERT INTO api_key_scopes (id, api_key_id, registry_id, repository_id, permission)
 		VALUES ($1, $2, $3, NULL, $4)
 		RETURNING created_at`
 	if err := tx.QueryRow(ctx, insertScopeCmd,

@@ -246,7 +246,7 @@ func (s *Server) resolveCreateAPIKeyScopes(c *gin.Context, u user, rawScopes []c
 			return nil, err
 		}
 
-		var repository *string
+		var repositoryID *uuid.UUID
 		normalizedRepository := ""
 		if rawScope.Repository != nil {
 			repo := strings.TrimSpace(*rawScope.Repository)
@@ -258,8 +258,12 @@ func (s *Server) resolveCreateAPIKeyScopes(c *gin.Context, u user, rawScopes []c
 					return nil, apiKeyRequestError{message: "repository must belong to the selected registry"}
 				}
 				leaf := repoLeaf(repo)
-				repository = &leaf
-				normalizedRepository = leaf
+				repositoryRec, err := s.db.EnsureRegistryRepository(c.Request.Context(), registryID, leaf)
+				if err != nil {
+					return nil, err
+				}
+				repositoryID = &repositoryRec.ID
+				normalizedRepository = repositoryRec.ID.String()
 			}
 		}
 
@@ -270,9 +274,9 @@ func (s *Server) resolveCreateAPIKeyScopes(c *gin.Context, u user, rawScopes []c
 		seen[scopeKey] = struct{}{}
 
 		out = append(out, db.AddAPIKeyScopeInput{
-			RegistryID: registryID,
-			Repository: repository,
-			Permission: permission,
+			RegistryID:   registryID,
+			RepositoryID: repositoryID,
+			Permission:   permission,
 		})
 	}
 
@@ -280,13 +284,13 @@ func (s *Server) resolveCreateAPIKeyScopes(c *gin.Context, u user, rawScopes []c
 		if a.RegistryID != b.RegistryID {
 			return strings.Compare(a.RegistryID.String(), b.RegistryID.String())
 		}
-		aRepo := ""
-		if a.Repository != nil {
-			aRepo = *a.Repository
+		aRepo := uuid.Nil.String()
+		if a.RepositoryID != nil {
+			aRepo = a.RepositoryID.String()
 		}
-		bRepo := ""
-		if b.Repository != nil {
-			bRepo = *b.Repository
+		bRepo := uuid.Nil.String()
+		if b.RepositoryID != nil {
+			bRepo = b.RepositoryID.String()
 		}
 		return strings.Compare(aRepo, bRepo)
 	})
