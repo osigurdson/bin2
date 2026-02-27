@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"bin2.io/internal/db"
 	"github.com/gin-gonic/gin"
 )
 
@@ -73,33 +74,33 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 
 	sum := sha256.Sum256(manifestBytes)
 	manifestDigest := "sha256:" + hex.EncodeToString(sum[:])
-
-	contentType := manifestContentType(c.GetHeader("Content-Type"))
-	if err := s.registryStorage.StoreManifest(c.Request.Context(), repo, reference, manifestBytes, contentType); err != nil {
-		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to store manifest")
+	registryID, err := s.resolveRegistryIDForRepo(c.Request.Context(), auth, repo)
+	if err != nil {
+		if errors.Is(err, errUnauthorized) {
+			writeOCIError(c, http.StatusForbidden, "DENIED", "access denied to this repository")
+			return
+		}
+		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to resolve registry")
 		return
 	}
 
-	if reference != manifestDigest {
-		if err := s.registryStorage.StoreManifest(c.Request.Context(), repo, manifestDigest, manifestBytes, contentType); err != nil {
-			writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to store digest manifest")
-			return
-		}
-	}
-
+	contentType := manifestContentType(c.GetHeader("Content-Type"))
 	references := []string{reference}
 	if reference != manifestDigest {
 		references = append(references, manifestDigest)
 	}
 	if err := s.indexRegistryManifest(
 		c.Request.Context(),
-		auth.registryID,
-		repo,
+		registryID,
+		repoLeaf(repo),
 		manifestDigest,
+		manifestBytes,
+		contentType,
 		references,
 		normalizedBlobDigests,
 	); err != nil {
-		logError(fmt.Errorf("could not update registry manifest index for %s@%s: %w", repo, reference, err))
+		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to store manifest")
+		return
 	}
 
 	c.Header("Docker-Content-Digest", manifestDigest)
@@ -137,13 +138,33 @@ func (s *Server) loadManifestResponse(c *gin.Context, repo, reference string) ([
 	if !s.ensureRepoAuthorized(c, repo) {
 		return nil, "", "", errors.New("forbidden")
 	}
+	auth, err := s.getRegistryAuth(c)
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return nil, "", "", err
+	}
 	if !validReference(reference) {
 		c.Status(http.StatusBadRequest)
 		return nil, "", "", errors.New("invalid reference")
 	}
 
-	manifestBytes, contentType, err := s.registryStorage.GetManifest(c.Request.Context(), repo, reference)
-	if errors.Is(err, ErrManifestNotFound) {
+	registryID, err := s.resolveRegistryIDForRepo(c.Request.Context(), auth, repo)
+	if err != nil {
+		if errors.Is(err, errUnauthorized) {
+			c.Status(http.StatusForbidden)
+			return nil, "", "", err
+		}
+		c.Status(http.StatusInternalServerError)
+		return nil, "", "", err
+	}
+
+	manifestBytes, contentType, digest, err := s.db.GetManifestByReference(
+		c.Request.Context(),
+		registryID,
+		repoLeaf(repo),
+		reference,
+	)
+	if errors.Is(err, db.ErrNotFound) {
 		c.Status(http.StatusNotFound)
 		return nil, "", "", err
 	}
@@ -151,9 +172,6 @@ func (s *Server) loadManifestResponse(c *gin.Context, repo, reference string) ([
 		c.Status(http.StatusInternalServerError)
 		return nil, "", "", err
 	}
-
-	sum := sha256.Sum256(manifestBytes)
-	digest := "sha256:" + hex.EncodeToString(sum[:])
 	return manifestBytes, manifestContentType(contentType), digest, nil
 }
 

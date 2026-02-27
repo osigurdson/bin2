@@ -29,8 +29,6 @@ type registryStorage interface {
 	BlobSize(ctx context.Context, digestHex string) (int64, error)
 	GetBlob(ctx context.Context, digestHex string) (io.ReadCloser, int64, error)
 	StoreBlobFromUpload(ctx context.Context, uuid, digestHex string) error
-	StoreManifest(ctx context.Context, repo, reference string, manifest []byte, contentType string) error
-	GetManifest(ctx context.Context, repo, reference string) ([]byte, string, error)
 }
 
 func newRegistryStorageFromEnv() (registryStorage, error) {

@@ -100,11 +100,21 @@ CREATE TABLE blobs (
   CHECK (digest ~ '^sha256:[a-f0-9]{64}$')
 );
 
+CREATE TABLE manifests (
+  digest TEXT PRIMARY KEY,
+  content_type TEXT NOT NULL,
+  body BYTEA NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (digest ~ '^sha256:[a-f0-9]{64}$'),
+  CHECK (content_type <> '')
+);
+
 CREATE TABLE manifest_refs (
   repository_id UUID NOT NULL
     REFERENCES repositories(id) ON DELETE CASCADE,
   reference TEXT NOT NULL,
-  manifest_digest TEXT NOT NULL,
+  manifest_digest TEXT NOT NULL
+    REFERENCES manifests(digest) ON DELETE CASCADE,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (repository_id, reference),
   CHECK (reference <> ''),
@@ -117,8 +127,10 @@ CREATE INDEX idx_manifest_refs_manifest
 CREATE TABLE manifest_blob_refs (
   repository_id UUID NOT NULL
     REFERENCES repositories(id) ON DELETE CASCADE,
-  manifest_digest TEXT NOT NULL,
-  blob_digest TEXT NOT NULL,
+  manifest_digest TEXT NOT NULL
+    REFERENCES manifests(digest) ON DELETE CASCADE,
+  blob_digest TEXT NOT NULL
+    REFERENCES blobs(digest) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (repository_id, manifest_digest, blob_digest),
   CHECK (manifest_digest ~ '^sha256:[a-f0-9]{64}$'),

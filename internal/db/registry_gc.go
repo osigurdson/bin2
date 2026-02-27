@@ -12,6 +12,8 @@ type UpsertRegistryManifestIndexArgs struct {
 	RegistryID     uuid.UUID
 	Repository     string
 	ManifestDigest string
+	ManifestBody   []byte
+	ContentType    string
 	References     []string
 	BlobDigests    []string
 }
@@ -28,24 +30,45 @@ func (d *DB) UpsertRegistryBlob(ctx context.Context, digest string) error {
 func (d *DB) UpsertRegistryManifestIndex(ctx context.Context, args UpsertRegistryManifestIndexArgs) error {
 	repository := strings.TrimSpace(args.Repository)
 	manifestDigest := strings.TrimSpace(args.ManifestDigest)
+	contentType := strings.TrimSpace(args.ContentType)
 	if repository == "" {
 		return fmt.Errorf("repository is required")
 	}
 	if manifestDigest == "" {
 		return fmt.Errorf("manifest digest is required")
 	}
-
-	repo, err := d.TouchRegistryRepositoryPush(ctx, args.RegistryID, repository)
-	if err != nil {
-		return err
+	if len(args.ManifestBody) == 0 {
+		return fmt.Errorf("manifest body is required")
 	}
-	repositoryID := repo.ID
+	if contentType == "" {
+		return fmt.Errorf("manifest content type is required")
+	}
 
 	tx, err := d.conn.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
+
+	repositoryID := uuid.New()
+	const upsertRepositoryCmd = `INSERT INTO repositories (id, registry_id, name, last_pushed_at)
+		VALUES ($1, $2, $3, NOW())
+		ON CONFLICT (registry_id, name)
+		DO UPDATE SET last_pushed_at = NOW()
+		RETURNING id`
+	if err := tx.QueryRow(ctx, upsertRepositoryCmd, repositoryID, args.RegistryID, repository).Scan(&repositoryID); err != nil {
+		return err
+	}
+
+	const upsertManifestCmd = `INSERT INTO manifests (digest, content_type, body)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (digest)
+		DO UPDATE SET
+			content_type = EXCLUDED.content_type,
+			body = EXCLUDED.body`
+	if _, err := tx.Exec(ctx, upsertManifestCmd, manifestDigest, contentType, args.ManifestBody); err != nil {
+		return err
+	}
 
 	const insertBlobRefCmd = `INSERT INTO manifest_blob_refs (
 		repository_id, manifest_digest, blob_digest
@@ -131,6 +154,35 @@ func (d *DB) DeleteRegistryBlob(ctx context.Context, digest string) error {
 	const cmd = `DELETE FROM blobs WHERE digest = $1`
 	_, err := d.conn.Exec(ctx, cmd, strings.TrimSpace(digest))
 	return err
+}
+
+func (d *DB) GetManifestByReference(ctx context.Context, registryID uuid.UUID, repository, reference string) ([]byte, string, string, error) {
+	const cmd = `SELECT m.body, m.content_type, m.digest
+		FROM repositories r
+		JOIN manifest_refs mr ON mr.repository_id = r.id
+		JOIN manifests m ON m.digest = mr.manifest_digest
+		WHERE r.registry_id = $1
+		  AND r.name = $2
+		  AND mr.reference = $3
+		LIMIT 1`
+
+	var body []byte
+	var contentType string
+	var digest string
+	err := d.conn.QueryRow(
+		ctx,
+		cmd,
+		registryID,
+		strings.TrimSpace(repository),
+		strings.TrimSpace(reference),
+	).Scan(&body, &contentType, &digest)
+	if err != nil {
+		if isNoRows(err) {
+			return nil, "", "", ErrNotFound
+		}
+		return nil, "", "", err
+	}
+	return body, contentType, digest, nil
 }
 
 func dedupeNonEmpty(values []string) []string {
