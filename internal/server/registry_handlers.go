@@ -9,6 +9,7 @@ import (
 
 	"bin2.io/internal/db"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 var registryNameRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -64,20 +65,21 @@ func (s *Server) listRegistriesHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func (s *Server) getRegistryByNameHandler(c *gin.Context) {
+func (s *Server) getRegistryByIDHandler(c *gin.Context) {
 	u, err := s.getUser(c)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 
-	name := strings.TrimSpace(c.Param("name"))
-	if !validRegistryName(name) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "registry not found"})
+	idParam := strings.TrimSpace(c.Param("id"))
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid registry id"})
 		return
 	}
 
-	registry, err := s.db.GetRegistryByName(c.Request.Context(), name)
+	registry, err := s.db.GetRegistryByID(c.Request.Context(), id)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "registry not found"})

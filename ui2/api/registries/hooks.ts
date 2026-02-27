@@ -13,14 +13,14 @@ export class CreateRegistryError extends Error {
   }
 }
 
-export function useGetRegistry(registryName: string) {
+export function useGetRegistry(registryId: string) {
   const { getAccessToken } = useAccessToken();
 
   return useQuery({
-    queryKey: ['registry', registryName],
+    queryKey: ['registry', registryId],
     queryFn: async () => {
       const token = await getAccessToken();
-      const res = await fetch(apiV1Url(`/registries/${encodeURIComponent(registryName)}`), {
+      const res = await fetch(apiV1Url(`/registries/${encodeURIComponent(registryId)}`), {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) {
@@ -31,7 +31,7 @@ export function useGetRegistry(registryName: string) {
       }
       return res.json() as Promise<Registry>;
     },
-    enabled: !!registryName,
+    enabled: !!registryId,
   });
 }
 

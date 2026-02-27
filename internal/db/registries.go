@@ -61,12 +61,36 @@ func (d *DB) ListRegistriesByOrg(ctx context.Context, orgID uuid.UUID) ([]Regist
 	return registries, nil
 }
 
+func (d *DB) GetRegistryByID(ctx context.Context, id uuid.UUID) (Registry, error) {
+	const cmd = `SELECT id, org_id, name
+		FROM registries
+		WHERE id = $1`
+	var registry Registry
+	err := d.conn.QueryRow(ctx, cmd, id).Scan(
+		&registry.ID,
+		&registry.OrgID,
+		&registry.Name,
+	)
+	if err != nil {
+		if isNoRows(err) {
+			return Registry{}, ErrNotFound
+		}
+		return Registry{}, err
+	}
+	return registry, nil
+}
+
 func (d *DB) GetRegistryByName(ctx context.Context, name string) (Registry, error) {
 	const cmd = `SELECT id, org_id, name
 		FROM registries
 		WHERE name = $1`
 	var registry Registry
-	if err := d.conn.QueryRow(ctx, cmd, name).Scan(&registry.ID, &registry.OrgID, &registry.Name); err != nil {
+	err := d.conn.QueryRow(ctx, cmd, name).Scan(
+		&registry.ID,
+		&registry.OrgID,
+		&registry.Name,
+	)
+	if err != nil {
 		if isNoRows(err) {
 			return Registry{}, ErrNotFound
 		}
