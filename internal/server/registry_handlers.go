@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
