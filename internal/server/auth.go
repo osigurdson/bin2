@@ -51,11 +51,10 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 		_, err := jwt.ParseWithClaims(tokenString, &claims, s.jwks.Keyfunc,
 			jwt.WithIssuedAt(),
 			jwt.WithExpirationRequired(),
-			jwt.WithIssuer("https://api.workos.com"),
-			jwt.WithAudience(s.workosClientID),
+			jwt.WithIssuer(fmt.Sprintf("https://api.workos.com/user_management/%s", s.workosClientID)),
 		)
 		if err != nil {
-			slog.Debug("Auth", slog.String("Bearer", "Claims"))
+			slog.Debug("Auth", slog.String("Bearer", "Claims"), slog.String("err", err.Error()))
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized - jwt"})
 			return
 		}
