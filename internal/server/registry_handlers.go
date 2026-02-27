@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"bin2.io/internal/db"
 	"github.com/gin-gonic/gin"
@@ -33,6 +34,17 @@ type addRegistryResponse struct {
 
 type listRegistriesResponse struct {
 	Registries []registryResponse `json:"registries"`
+}
+
+type repositoryResponse struct {
+	ID       string  `json:"id"`
+	Name     string  `json:"name"`
+	LastPush string  `json:"lastPush"`
+	LastTag  *string `json:"lastTag"`
+}
+
+type listRepositoriesResponse struct {
+	Repositories []repositoryResponse `json:"repositories"`
 }
 
 func validRegistryName(name string) bool {
@@ -108,6 +120,68 @@ func (s *Server) getRegistryByIDHandler(c *gin.Context) {
 		ID:   registry.ID.String(),
 		Name: registry.Name,
 	})
+}
+
+func (s *Server) listRepositoriesHandler(c *gin.Context) {
+	u, err := s.getUser(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	idParam := strings.TrimSpace(c.Query("registryId"))
+	if idParam == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "registryId is required"})
+		return
+	}
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid registryId"})
+		return
+	}
+
+	registry, err := s.db.GetRegistryByID(c.Request.Context(), id)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "registry not found"})
+			return
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get registry"})
+		return
+	}
+
+	if registry.OrgID != u.orgID {
+		c.JSON(http.StatusNotFound, gin.H{"error": "registry not found"})
+		return
+	}
+
+	repositories, err := s.db.ListRepositoriesByRegistryID(c.Request.Context(), registry.ID)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list repositories"})
+		return
+	}
+
+	resp := listRepositoriesResponse{
+		Repositories: make([]repositoryResponse, 0, len(repositories)),
+	}
+	for _, repository := range repositories {
+		resp.Repositories = append(resp.Repositories, repositoryResponse{
+			ID:       repository.ID.String(),
+			Name:     repository.Name,
+			LastPush: repository.LastPushedAt.UTC().Format(time.RFC3339),
+			LastTag:  repository.LastTag,
+		})
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
 
 func (s *Server) getRegistryExistsHandler(c *gin.Context) {

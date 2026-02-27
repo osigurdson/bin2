@@ -1,4 +1,7 @@
+'use client';
+
 import { Repository } from "@/api/repositories/types";
+import { useGetRepositories } from "@/api/repositories/hooks";
 
 function formatTimeAgo(date: Date) {
   const diffMs = Date.now() - date.getTime();
@@ -17,12 +20,21 @@ function formatTimeAgo(date: Date) {
   return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
 }
 
-export default function Repositories() {
-  const repos: Repository[] = [
-    { id: '555', name: 'api', lastTag: '5', lastPush: new Date(2026, 2, 25) },
-    { id: '556', name: 'stream', lastTag: '7', lastPush: new Date(2026, 2, 24) },
-    { id: '557', name: 'py', lastTag: '3', lastPush: new Date(2026, 1, 22) },
-  ];
+type RepositoriesProps = {
+  registryId: string;
+};
+
+export default function Repositories({ registryId }: RepositoriesProps) {
+  const { data, isLoading, isError } = useGetRepositories(registryId);
+  const repos: Repository[] = data?.repositories ?? [];
+
+  if (isLoading) {
+    return <div className="p-2 text-sm opacity-70">Loading repositories...</div>;
+  }
+
+  if (isError) {
+    return <div className="p-2 text-sm text-error">Could not load repositories.</div>;
+  }
 
   if (repos.length === 0) {
     return null;
@@ -41,8 +53,8 @@ export default function Repositories() {
           {repos.map((repo) => (
             <tr key={repo.id}>
               <td className="py-1">{repo.name}</td>
-              <td className="px-2 py-1">{repo.lastTag}</td>
-              <td className="px-2 py-1">{formatTimeAgo(repo.lastPush)}</td>
+              <td className="px-2 py-1">{repo.lastTag ?? "-"}</td>
+              <td className="px-2 py-1">{formatTimeAgo(new Date(repo.lastPush))}</td>
             </tr>
           ))}
         </tbody>

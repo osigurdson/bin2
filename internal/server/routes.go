@@ -37,6 +37,10 @@ func (s *Server) addRoutes() {
 	registries.GET("/exists", s.getRegistryExistsHandler)
 	registries.POST("", s.addRegistryHandler)
 
+	repositories := api.Group("/repositories")
+	repositories.Use(s.authMiddleware())
+	repositories.GET("", s.listRepositoriesHandler)
+
 	apikeys := api.Group("/api-keys")
 	apikeys.Use(s.authMiddleware())
 	apikeys.POST("", s.addAPIKeyHandler)

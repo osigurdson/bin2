@@ -20,9 +20,9 @@ export default function RegistryView({ registryId }: { registryId: string }) {
   return (
     <>
       <div className="space-y-6">
-        <div className="mb-4">Registry: <b>bin2.io/{registry.name}</b> (22 repos / 109.4 GiB)</div>
+        <div className="mb-4">Registry: <b>bin2.io/{registry.name}</b></div>
         <Commands id={registry.id} name={registry.name} apiKeys={registryKeys} />
-        <Repositories />
+        <Repositories registryId={registry.id} />
       </div>
     </>
   )
