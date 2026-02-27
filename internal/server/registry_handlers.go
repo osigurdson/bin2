@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -103,7 +104,7 @@ func (s *Server) getRegistryByNameHandler(c *gin.Context) {
 }
 
 func (s *Server) getRegistryExistsHandler(c *gin.Context) {
-	name := strings.TrimSpace(c.Param("name"))
+	name := strings.TrimSpace(c.Query("name"))
 	if !validRegistryName(name) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad registry name"})
 		return

@@ -35,6 +35,19 @@ export function useGetRegistry(registryName: string) {
   });
 }
 
+async function fetchRegistryExists(registryName: string, token: string) {
+  const url = apiV1Url(`/registries/exists?name=${registryName}`);
+  const res = await fetch(
+    url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) throw new Error('Request failed');
+  return res.json();
+}
+
 export function useGetRegistryExists(registryName: string) {
   const { getAccessToken } = useAccessToken();
 
@@ -42,20 +55,10 @@ export function useGetRegistryExists(registryName: string) {
     queryKey: ['registry', registryName],
     queryFn: async () => {
       const token = await getAccessToken();
-      if (!token) {
-        throw new Error('No access token');
-      }
-      const res = await fetch(
-        apiV1Url(`/registries/exists?name=${encodeURIComponent(registryName)}`), {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      }
-      );
-      if (!res.ok) {
-        throw new Error('Network response issue');
-      }
-      return res.json() as Promise<boolean>;
+      if (!token) throw new Error('No access token');
+      return fetchRegistryExists(registryName, token);
     },
-    enabled: !!registryName,
+    enabled: typeof registryName === 'string' && registryName.trim().length > 0,
   });
 }
 
