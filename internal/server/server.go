@@ -3,13 +3,15 @@ package server
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
 
 	"bin2.io/internal/db"
-	"github.com/clerk/clerk-sdk-go/v2"
+	"github.com/MicahParks/keyfunc/v3"
 	"github.com/gin-gonic/gin"
+	"github.com/workos/workos-go/v4/pkg/usermanagement"
 )
 
 type Server struct {
@@ -20,14 +22,40 @@ type Server struct {
 	registryJWTPrivateKey ed25519.PrivateKey
 	registryJWTPublicKey  ed25519.PublicKey
 	registryService       string
+	jwks                  keyfunc.Keyfunc
+	workosClientID        string
+	apiKeyEncryptionKey   [32]byte
 }
 
 func New() (*Server, error) {
-	clerkSecretKey := os.Getenv("CLERK_SECRET_KEY")
-	if clerkSecretKey == "" {
-		return nil, fmt.Errorf("CLERK_SECRET_KEY is not defined")
+	workosAPIKey := os.Getenv("WORKOS_API_KEY")
+	if workosAPIKey == "" {
+		return nil, fmt.Errorf("WORKOS_API_KEY is not defined")
 	}
-	clerk.SetKey(clerkSecretKey)
+
+	workosClientID := os.Getenv("WORKOS_CLIENT_ID")
+	if workosClientID == "" {
+		return nil, fmt.Errorf("WORKOS_CLIENT_ID is not defined")
+	}
+
+	apiKeyEncKeyHex := os.Getenv("API_KEY_ENCRYPTION_KEY")
+	if apiKeyEncKeyHex == "" {
+		return nil, fmt.Errorf("API_KEY_ENCRYPTION_KEY is not defined")
+	}
+	apiKeyEncKeyBytes, err := hex.DecodeString(apiKeyEncKeyHex)
+	if err != nil || len(apiKeyEncKeyBytes) != 32 {
+		return nil, fmt.Errorf("API_KEY_ENCRYPTION_KEY must be a 64-char hex string (32 bytes)")
+	}
+	var apiKeyEncryptionKey [32]byte
+	copy(apiKeyEncryptionKey[:], apiKeyEncKeyBytes)
+
+	usermanagement.SetAPIKey(workosAPIKey)
+
+	jwksURL := fmt.Sprintf("https://api.workos.com/sso/jwks/%s", workosClientID)
+	jwks, err := keyfunc.NewDefault([]string{jwksURL})
+	if err != nil {
+		return nil, fmt.Errorf("could not initialize JWKS: %w", err)
+	}
 
 	cfg, err := db.NewConfigFromEnv()
 	if err != nil {
@@ -62,6 +90,9 @@ func New() (*Server, error) {
 		registryJWTPrivateKey: registryJWTPrivateKey,
 		registryJWTPublicKey:  registryJWTPublicKey,
 		registryService:       strings.TrimSpace(getenvDefault("REGISTRY_SERVICE", "")),
+		jwks:                  jwks,
+		workosClientID:        workosClientID,
+		apiKeyEncryptionKey:   apiKeyEncryptionKey,
 	}
 	s.addRoutes()
 	return s, nil

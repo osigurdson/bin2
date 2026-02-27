@@ -2,30 +2,52 @@
 
 import ClipboardCopy from "@/components/ClipboardCopy";
 import { useState } from "react";
+import { APIKey } from "@/api/apikeys/types";
 
 type CommandProps = {
   id: string;
   name: string;
-  apiKey: string;
+  apiKeys: APIKey[];
 }
 
 export default function Commands(props: CommandProps) {
   const [client, setClient] = useState<ClientType>('docker');
-  const username = `bin2.io/${props.name}`;
-  const cliLoginCommand = `${client} login -u ${username} -p ${props.apiKey}`;
+  const [selectedKeyId, setSelectedKeyId] = useState<string | null>(null);
+
+  const activeKey = selectedKeyId
+    ? props.apiKeys.find(k => k.id === selectedKeyId) ?? props.apiKeys[0]
+    : props.apiKeys[0];
+
+  const username = 'bin2';
+  const password = activeKey?.secretKey ?? '';
+  const cliLoginCommand = `${client} login push.bin2.io -u ${username} -p ${password}`;
   const pullSecretName = `${props.name}-pull-secret`;
   const pullSecretYaml = buildPullSecretYaml({
     name: pullSecretName,
     username,
-    password: props.apiKey,
+    password,
   });
   const maskedPullSecretYaml = buildMaskedPullSecretYaml({
     name: pullSecretName,
   });
 
   return (
-    <div className="flex flex-col mt-2 mb-2 bg-base-200 rounded p-2 gap-1">
+    <div className="flex flex-col bg-base-200 p-2 gap-1">
       <span><b>Login</b></span>
+      {props.apiKeys.length > 1 && (
+        <select
+          value={activeKey?.id ?? ''}
+          onChange={e => setSelectedKeyId(e.target.value)}
+          className="bg-transparent outline-none appearance-none cursor-pointer text-sm"
+        >
+          {props.apiKeys.map(k => (
+            <option key={k.id} value={k.id}>{k.keyName}</option>
+          ))}
+        </select>
+      )}
+      {props.apiKeys.length === 0 && (
+        <span className="text-sm opacity-60">No API keys — create one to log in.</span>
+      )}
       <div className={`flex ${client === 'k8s' ? 'items-start' : 'items-center'}`}>
         <ClientSelect value={client} onChange={setClient} />
         {client === 'k8s' ? (
@@ -37,8 +59,8 @@ export default function Commands(props: CommandProps) {
           </>
         ) : (
           <>
-            <span>login -u bin2.io/{props.name} -p ••••</span>
-            <ClipboardCopy copyText={cliLoginCommand} />
+            <span>login -u {username} -p {activeKey ? '••••' : '—'}</span>
+            {activeKey && <ClipboardCopy copyText={cliLoginCommand} />}
           </>
         )}
       </div>

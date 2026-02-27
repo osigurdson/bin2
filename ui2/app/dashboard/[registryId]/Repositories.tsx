@@ -28,23 +28,25 @@ export default function Repositories() {
     return null;
   }
   return (
-    <table className="w-full">
-      <thead>
-        <tr>
-          <th className="py-1 text-left">Repository</th>
-          <th className="px-2 py-1 text-left">Last tag</th>
-          <th className="px-2 py-1 text-left">Last push</th>
-        </tr>
-      </thead>
-      <tbody>
-        {repos.map((repo) => (
-          <tr key={repo.id}>
-            <td className="py-1">{repo.name}</td>
-            <td className="px-2 py-1">{repo.lastTag}</td>
-            <td className="px-2 py-1">{formatTimeAgo(repo.lastPush)}</td>
+    <div className="p-2">
+      <table className="w-full">
+        <thead>
+          <tr>
+            <th className="py-1 text-left">Repository</th>
+            <th className="px-2 py-1 text-left">Last tag</th>
+            <th className="px-2 py-1 text-left">Last push</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {repos.map((repo) => (
+            <tr key={repo.id}>
+              <td className="py-1">{repo.name}</td>
+              <td className="px-2 py-1">{repo.lastTag}</td>
+              <td className="px-2 py-1">{formatTimeAgo(repo.lastPush)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

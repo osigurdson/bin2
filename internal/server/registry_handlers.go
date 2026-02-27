@@ -9,6 +9,7 @@ import (
 
 	"bin2.io/internal/db"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 var registryNameRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -22,6 +23,12 @@ type addRegistryRequest struct {
 type registryResponse struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+type addRegistryResponse struct {
+	ID     string         `json:"id"`
+	Name   string         `json:"name"`
+	APIKey apiKeyResponse `json:"apiKey"`
 }
 
 type listRegistriesResponse struct {
@@ -42,7 +49,7 @@ func (s *Server) listRegistriesHandler(c *gin.Context) {
 		return
 	}
 
-	registries, err := s.db.ListRegistriesByUser(c.Request.Context(), u.id)
+	registries, err := s.db.ListRegistriesByOrg(c.Request.Context(), u.orgID)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return
@@ -64,6 +71,66 @@ func (s *Server) listRegistriesHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+func (s *Server) getRegistryByIDHandler(c *gin.Context) {
+	u, err := s.getUser(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	idParam := strings.TrimSpace(c.Param("id"))
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid registry id"})
+		return
+	}
+
+	registry, err := s.db.GetRegistryByID(c.Request.Context(), id)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "registry not found"})
+			return
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get registry"})
+		return
+	}
+
+	if registry.OrgID != u.orgID {
+		c.JSON(http.StatusNotFound, gin.H{"error": "registry not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, registryResponse{
+		ID:   registry.ID.String(),
+		Name: registry.Name,
+	})
+}
+
+func (s *Server) getRegistryExistsHandler(c *gin.Context) {
+	name := strings.TrimSpace(c.Query("name"))
+	if !validRegistryName(name) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad registry name"})
+		return
+	}
+
+	_, err := s.db.GetRegistryByName(c.Request.Context(), name)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			c.JSON(http.StatusOK, false)
+			return
+		}
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, true)
+}
+
 func (s *Server) addRegistryHandler(c *gin.Context) {
 	u, err := s.getUser(c)
 	if err != nil {
@@ -82,9 +149,26 @@ func (s *Server) addRegistryHandler(c *gin.Context) {
 		return
 	}
 
-	registry, err := s.db.AddRegistry(c.Request.Context(), db.AddRegistryArgs{
-		UserID: u.id,
-		Name:   req.Name,
+	fullKey, prefix, err := generateAPIKey()
+	if err != nil {
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create registry"})
+		return
+	}
+	encrypted, err := encryptAPIKey(fullKey, s.apiKeyEncryptionKey)
+	if err != nil {
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create registry"})
+		return
+	}
+
+	result, err := s.db.AddRegistryWithKey(c.Request.Context(), db.AddRegistryWithKeyArgs{
+		OrgID:           u.orgID,
+		Name:            req.Name,
+		UserID:          u.id,
+		KeyName:         "default",
+		SecretEncrypted: encrypted,
+		Prefix:          prefix,
 	})
 	if err != nil {
 		if errors.Is(err, db.ErrConflict) {
@@ -96,8 +180,9 @@ func (s *Server) addRegistryHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, registryResponse{
-		ID:   registry.ID.String(),
-		Name: registry.Name,
+	c.JSON(http.StatusCreated, addRegistryResponse{
+		ID:     result.Registry.ID.String(),
+		Name:   result.Registry.Name,
+		APIKey: s.buildAPIKeyResponse(result.APIKey, fullKey),
 	})
 }

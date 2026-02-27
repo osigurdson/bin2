@@ -1,73 +1,92 @@
 package server
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base32"
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"regexp"
-
-	"bin2.io/internal/db"
-	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
 )
 
-type apiKeyCredential struct {
-	UserID uuid.UUID
-	Secret string
+var apiKeyRe = regexp.MustCompile(`^sk_([0-9a-f]{16})_([A-Z2-7]+)$`)
+
+// generateAPIKey returns a new random API key string and its prefix.
+// Format: sk_{16-hex-prefix}_{52-char-base32-secret}
+func generateAPIKey() (fullKey string, prefix string, err error) {
+	prefixBytes := make([]byte, 8)
+	if _, err = rand.Read(prefixBytes); err != nil {
+		return "", "", err
+	}
+	secretBytes := make([]byte, 32)
+	if _, err = rand.Read(secretBytes); err != nil {
+		return "", "", err
+	}
+	prefix = hex.EncodeToString(prefixBytes)
+	secret := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(secretBytes)
+	fullKey = fmt.Sprintf("sk_%s_%s", prefix, secret)
+	return fullKey, prefix, nil
 }
 
-func generateAPIKeyCredential(userID uuid.UUID) (cred apiKeyCredential, hash string, err error) {
-	key := make([]byte, 32)
-	_, err = rand.Read(key)
+// encryptAPIKey encrypts a full API key string with AES-256-GCM.
+// The output is base64(nonce || ciphertext).
+func encryptAPIKey(fullKey string, encKey [32]byte) (string, error) {
+	block, err := aes.NewCipher(encKey[:])
 	if err != nil {
-		return apiKeyCredential{}, "", err
+		return "", err
 	}
-
-	base32Secret := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(key)
-	cred = apiKeyCredential{
-		UserID: userID,
-		Secret: base32Secret,
-	}
-
-	credString := ConvertAPIKeyCredentialToString(cred)
-	sha := sha256.Sum256([]byte(credString))
-	hashBytes, err := bcrypt.GenerateFromPassword(sha[:], bcrypt.DefaultCost)
+	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return apiKeyCredential{}, "", err
+		return "", err
 	}
-
-	return cred, string(hashBytes), nil
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+	ciphertext := gcm.Seal(nonce, nonce, []byte(fullKey), nil)
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
-func ConvertAPIKeyCredentialToString(cred apiKeyCredential) string {
-	return fmt.Sprintf("sk_%s_%s", cred.UserID, cred.Secret)
-}
-
-func parseAPIKeyCredential(apiKeyCredentialString string) (apiKeyCredential, error) {
-	re := regexp.MustCompile(`^sk_([0-9a-fA-F-]{36})_(.+)$`)
-	matches := re.FindStringSubmatch(apiKeyCredentialString)
-	if len(matches) < 3 {
-		return apiKeyCredential{}, fmt.Errorf("API Key credential string did not match expected format")
-	}
-
-	userID, err := uuid.Parse(matches[1])
+// decryptAPIKey decrypts a value produced by encryptAPIKey.
+func decryptAPIKey(encrypted string, encKey [32]byte) (string, error) {
+	data, err := base64.StdEncoding.DecodeString(encrypted)
 	if err != nil {
-		return apiKeyCredential{}, err
+		return "", err
 	}
-	return apiKeyCredential{
-		UserID: userID,
-		Secret: matches[2],
-	}, nil
+	block, err := aes.NewCipher(encKey[:])
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	if len(data) < gcm.NonceSize() {
+		return "", fmt.Errorf("ciphertext too short")
+	}
+	nonce, ciphertext := data[:gcm.NonceSize()], data[gcm.NonceSize():]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", err
+	}
+	return string(plaintext), nil
 }
 
-func matchAPIKeyCredential(cred apiKeyCredential, keys []db.APIKey) (db.APIKey, error) {
-	credString := ConvertAPIKeyCredentialToString(cred)
-	secret := sha256.Sum256([]byte(credString))
-	for _, key := range keys {
-		if err := bcrypt.CompareHashAndPassword([]byte(key.SecretKeyHash), secret[:]); err == nil {
-			return key, nil
-		}
+// matchAPIKey does a constant-time comparison of the provided key against the
+// decrypted stored key, preventing timing attacks.
+func matchAPIKey(provided, decrypted string) bool {
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(decrypted)) == 1
+}
+
+// parseAPIKeyPrefix extracts the prefix segment from an API key string.
+func parseAPIKeyPrefix(key string) (string, error) {
+	matches := apiKeyRe.FindStringSubmatch(key)
+	if len(matches) < 2 {
+		return "", fmt.Errorf("invalid API key format")
 	}
-	return db.APIKey{}, errUnauthorized
+	return matches[1], nil
 }
