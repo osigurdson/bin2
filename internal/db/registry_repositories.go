@@ -24,7 +24,7 @@ func (d *DB) EnsureRegistryRepository(ctx context.Context, registryID uuid.UUID,
 	}
 
 	repo := RegistryRepository{ID: uuid.New(), RegistryID: registryID, Name: normalizedName}
-	const cmd = `INSERT INTO registry_repositories (id, registry_id, name)
+	const cmd = `INSERT INTO repositories (id, registry_id, name)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (registry_id, name)
 		DO UPDATE SET name = EXCLUDED.name
@@ -48,7 +48,7 @@ func (d *DB) TouchRegistryRepositoryPush(ctx context.Context, registryID uuid.UU
 	}
 
 	repo := RegistryRepository{ID: uuid.New(), RegistryID: registryID, Name: normalizedName}
-	const cmd = `INSERT INTO registry_repositories (id, registry_id, name, last_pushed_at)
+	const cmd = `INSERT INTO repositories (id, registry_id, name, last_pushed_at)
 		VALUES ($1, $2, $3, NOW())
 		ON CONFLICT (registry_id, name)
 		DO UPDATE SET last_pushed_at = NOW()

@@ -17,7 +17,7 @@ type UpsertRegistryManifestIndexArgs struct {
 }
 
 func (d *DB) UpsertRegistryBlob(ctx context.Context, digest string) error {
-	const cmd = `INSERT INTO registry_blobs (digest)
+	const cmd = `INSERT INTO blobs (digest)
 		VALUES ($1)
 		ON CONFLICT (digest)
 		DO UPDATE SET last_seen_at = NOW()`
@@ -47,7 +47,7 @@ func (d *DB) UpsertRegistryManifestIndex(ctx context.Context, args UpsertRegistr
 	}
 	defer tx.Rollback(ctx)
 
-	const insertBlobRefCmd = `INSERT INTO registry_manifest_blob_refs (
+	const insertBlobRefCmd = `INSERT INTO manifest_blob_refs (
 		repository_id, manifest_digest, blob_digest
 	) VALUES ($1, $2, $3)
 	ON CONFLICT DO NOTHING`
@@ -64,7 +64,7 @@ func (d *DB) UpsertRegistryManifestIndex(ctx context.Context, args UpsertRegistr
 		}
 	}
 
-	const upsertManifestRefCmd = `INSERT INTO registry_manifest_refs (
+	const upsertManifestRefCmd = `INSERT INTO manifest_refs (
 		repository_id, reference, manifest_digest
 	) VALUES ($1, $2, $3)
 	ON CONFLICT (repository_id, reference)
@@ -94,13 +94,13 @@ func (d *DB) ListUnreferencedRegistryBlobDigests(ctx context.Context, limit int)
 
 	const cmd = `WITH referenced_blobs AS (
 		SELECT DISTINCT mb.blob_digest
-		FROM registry_manifest_blob_refs mb
-		JOIN registry_manifest_refs mr
+		FROM manifest_blob_refs mb
+		JOIN manifest_refs mr
 		  ON mr.repository_id = mb.repository_id
 		 AND mr.manifest_digest = mb.manifest_digest
 	)
 	SELECT b.digest
-	FROM registry_blobs b
+	FROM blobs b
 	LEFT JOIN referenced_blobs r
 	  ON r.blob_digest = b.digest
 	WHERE r.blob_digest IS NULL
@@ -128,7 +128,7 @@ func (d *DB) ListUnreferencedRegistryBlobDigests(ctx context.Context, limit int)
 }
 
 func (d *DB) DeleteRegistryBlob(ctx context.Context, digest string) error {
-	const cmd = `DELETE FROM registry_blobs WHERE digest = $1`
+	const cmd = `DELETE FROM blobs WHERE digest = $1`
 	_, err := d.conn.Exec(ctx, cmd, strings.TrimSpace(digest))
 	return err
 }

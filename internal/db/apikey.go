@@ -189,7 +189,7 @@ func (d *DB) GetAPIKeyByPrefix(ctx context.Context, prefix string) (APIKey, erro
 func (d *DB) ListAPIKeyScopesByAPIKeyID(ctx context.Context, apiKeyID uuid.UUID) ([]APIKeyScope, error) {
 	const cmd = `SELECT s.id, s.api_key_id, s.registry_id, s.repository_id, rr.name, s.permission, s.created_at
 		FROM api_key_scopes s
-		LEFT JOIN registry_repositories rr
+		LEFT JOIN repositories rr
 		  ON rr.id = s.repository_id
 		WHERE s.api_key_id = $1
 		ORDER BY s.created_at ASC`
