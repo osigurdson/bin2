@@ -11,6 +11,8 @@ type CommandProps = {
 }
 
 export default function Commands(props: CommandProps) {
+  const registryAddr = 'localhost:5000';
+  const tlsVerify = registryAddr === 'localhost:5000' ? '--tls-verify=false' : '';
   const [client, setClient] = useState<ClientType>('docker');
   const [selectedKeyId, setSelectedKeyId] = useState<string | null>(null);
 
@@ -18,13 +20,13 @@ export default function Commands(props: CommandProps) {
     ? props.apiKeys.find(k => k.id === selectedKeyId) ?? props.apiKeys[0]
     : props.apiKeys[0];
 
-  const username = 'bin2';
+  const regUsername = 'bin2';
   const password = activeKey?.secretKey ?? '';
-  const cliLoginCommand = `${client} login push.bin2.io -u ${username} -p ${password}`;
+  const cliLoginCommand = `${client} login ${tlsVerify} ${registryAddr} -u ${regUsername} -p ${password}`;
   const pullSecretName = `${props.name}-pull-secret`;
   const pullSecretYaml = buildPullSecretYaml({
     name: pullSecretName,
-    username,
+    username: regUsername,
     password,
   });
   const maskedPullSecretYaml = buildMaskedPullSecretYaml({
@@ -59,7 +61,7 @@ export default function Commands(props: CommandProps) {
           </>
         ) : (
           <>
-            <span>login -u {username} -p {activeKey ? '••••' : '—'}</span>
+            <span>login {tlsVerify} {registryAddr} -u {regUsername} -p {activeKey ? '••••' : '—'}</span>
             {activeKey && <ClipboardCopy copyText={cliLoginCommand} />}
           </>
         )}
