@@ -84,7 +84,9 @@ export function useGetRegistries() {
   })
 }
 
-export function useCreateRegistry() {
+export function useCreateRegistry(
+  onSuccess?: (created: Registry) => void
+) {
   const queryClient = useQueryClient();
   const { getAccessToken } = useAccessToken();
 
@@ -110,14 +112,20 @@ export function useCreateRegistry() {
 
       return res.json() as Promise<Registry>;
     },
-    onSuccess: (createdRegistry) => {
-      queryClient.setQueryData<ListRegistriesResponse>(['registries'], (previous) => {
-        const registries = previous?.registries ?? [];
-        if (registries.some((registry) => registry.id === createdRegistry.id)) {
-          return previous ?? { registries: [createdRegistry] };
+
+    onSuccess: (created) => {
+      queryClient.setQueryData<ListRegistriesResponse>(
+        ['registries'],
+        (previous) => {
+          const registries = previous?.registries ?? [];
+          return {
+            ...(previous ?? {}),
+            registries: [created, ...registries],
+          };
         }
-        return { registries: [createdRegistry, ...registries] };
-      });
+      );
+
+      onSuccess?.(created);
     },
   });
 }

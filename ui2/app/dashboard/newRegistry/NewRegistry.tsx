@@ -1,14 +1,19 @@
 'use client';
 
-import { useGetRegistryExists } from "@/api/registries/hooks";
+import { useCreateRegistry, useGetRegistryExists } from "@/api/registries/hooks";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export default function NewRegistry() {
+  const router = useRouter();
   const [name, setName] = useState('');
   const debouncedName = useDebounce(name, 400);
   const { data: exists } = useGetRegistryExists(debouncedName);
+  const { mutate, isPending } = useCreateRegistry((created) => {
+    router.push(`/dashboard/${created.id}`)
+  });
 
-  const canSave = !exists && name;
+  const canSave = !exists && !!name && !isPending;
 
   const onNameChange = (n: string) => {
     const slug = n.toLowerCase().replace(/[^a-z0-9-_]/g, "")
@@ -17,6 +22,11 @@ export default function NewRegistry() {
     }
     setName(slug);
   }
+
+  const onSave = () => {
+    mutate({ name: name });
+  }
+
   return (
     <div className="flex flex-col items-center justify-center">
       <div className="flex flex-col w-md">
@@ -49,8 +59,9 @@ export default function NewRegistry() {
         <button
           className="btn btn-primary mt-4 w-10px"
           disabled={!canSave}
+          onClick={onSave}
         >
-          Create Registry
+          {isPending ? 'Creating...' : 'Create Registry'}
         </button>
       </div>
     </div>
