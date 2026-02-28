@@ -22,11 +22,19 @@ export default function RegistryView({ registryId }: { registryId: string }) {
     <>
       <div className="space-y-6">
         <div className="mb-4">
-          <span>Registry: <b>bin2.io/{registry.name}</b> ({formatBytes(registry.sizeBytes)})</span>
+          <span>Registry: <b>bin2.io/{registry.name}</b> <RegistrySizeDisplay sizeBytes={registry.sizeBytes} /></span>
         </div>
         <Commands id={registry.id} name={registry.name} apiKeys={registryKeys} />
         <Repositories registryId={registry.id} />
       </div>
     </>
   )
+}
+
+function RegistrySizeDisplay({ sizeBytes }: { sizeBytes: number }) {
+  if (sizeBytes === 0) {
+    return null;
+  }
+
+  return (<span>({formatBytes(sizeBytes)})</span>)
 }
