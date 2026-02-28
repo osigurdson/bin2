@@ -32,11 +32,11 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-3">
-      <div className="text-sm opacity-70">
-        {data.registries.length} registries · {formatBytes(totalSizeBytes)}
+    <div className="flex flex-col max-w-xl">
+      <div className="">
+        {data.registries.length} registries  ({formatBytes(totalSizeBytes)})
       </div>
-      <ul className="space-y-2">
+      <ul className="space-y-2 mt-4">
         {data.registries.map((registry) => (
           <li key={registry.id}>
             <RegistryCard
