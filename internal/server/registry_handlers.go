@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -258,7 +259,7 @@ func (s *Server) addRegistryHandler(c *gin.Context) {
 		OrgID:           u.orgID,
 		Name:            req.Name,
 		UserID:          u.id,
-		KeyName:         "default",
+		KeyName:         fmt.Sprintf("default-%s-%s", req.Name, prefix),
 		SecretEncrypted: encrypted,
 		Prefix:          prefix,
 	})
