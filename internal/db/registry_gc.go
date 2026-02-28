@@ -18,12 +18,18 @@ type UpsertRegistryManifestIndexArgs struct {
 	BlobDigests    []string
 }
 
-func (d *DB) UpsertRegistryBlob(ctx context.Context, digest string) error {
-	const cmd = `INSERT INTO blobs (digest)
-		VALUES ($1)
+func (d *DB) UpsertRegistryBlob(ctx context.Context, digest string, sizeBytes int64) error {
+	if sizeBytes <= 0 {
+		return fmt.Errorf("blob size must be > 0")
+	}
+
+	const cmd = `INSERT INTO blobs (digest, size_bytes)
+		VALUES ($1, $2)
 		ON CONFLICT (digest)
-		DO UPDATE SET last_seen_at = NOW()`
-	_, err := d.conn.Exec(ctx, cmd, strings.TrimSpace(digest))
+		DO UPDATE SET
+			size_bytes = EXCLUDED.size_bytes,
+			last_seen_at = NOW()`
+	_, err := d.conn.Exec(ctx, cmd, strings.TrimSpace(digest), sizeBytes)
 	return err
 }
 
@@ -183,6 +189,28 @@ func (d *DB) GetManifestByReference(ctx context.Context, registryID uuid.UUID, r
 		return nil, "", "", err
 	}
 	return body, contentType, digest, nil
+}
+
+func (d *DB) GetRegistryReferencedBlobBytes(ctx context.Context, registryID uuid.UUID) (int64, error) {
+	const cmd = `SELECT COALESCE(SUM(b.size_bytes), 0)
+		FROM (
+			SELECT DISTINCT mb.blob_digest
+			FROM repositories r
+			JOIN manifest_refs mr
+			  ON mr.repository_id = r.id
+			JOIN manifest_blob_refs mb
+			  ON mb.repository_id = mr.repository_id
+			 AND mb.manifest_digest = mr.manifest_digest
+			WHERE r.registry_id = $1
+		) referenced
+		JOIN blobs b
+		  ON b.digest = referenced.blob_digest`
+
+	var total int64
+	if err := d.conn.QueryRow(ctx, cmd, registryID).Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, nil
 }
 
 func dedupeNonEmpty(values []string) []string {

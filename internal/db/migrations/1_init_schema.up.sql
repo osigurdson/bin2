@@ -95,6 +95,7 @@ CREATE UNIQUE INDEX unique_api_key_repository_scope
 -- blob GC index
 CREATE TABLE blobs (
   digest TEXT PRIMARY KEY,
+  size_bytes BIGINT NOT NULL CHECK (size_bytes > 0),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CHECK (digest ~ '^sha256:[a-f0-9]{64}$')

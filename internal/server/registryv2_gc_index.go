@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func (s *Server) trackRegistryBlobDigest(ctx context.Context, digest string) error {
+func (s *Server) trackRegistryBlobDigest(ctx context.Context, digest string, sizeBytes int64) error {
 	if s.db == nil {
 		return nil
 	}
@@ -18,7 +18,7 @@ func (s *Server) trackRegistryBlobDigest(ctx context.Context, digest string) err
 	if digest == "" {
 		return nil
 	}
-	return s.db.UpsertRegistryBlob(ctx, digest)
+	return s.db.UpsertRegistryBlob(ctx, digest, sizeBytes)
 }
 
 func (s *Server) indexRegistryManifest(

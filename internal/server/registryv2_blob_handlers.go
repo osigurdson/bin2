@@ -106,7 +106,12 @@ func (s *Server) finalizeBlobUploadHandler(c *gin.Context, repo, uuid string) {
 	}
 	if exists {
 		_ = s.registryStorage.DeleteUpload(c.Request.Context(), uuid)
-		if err := s.trackRegistryBlobDigest(c.Request.Context(), digest); err != nil {
+		size, err := s.registryStorage.BlobSize(c.Request.Context(), digestHex)
+		if err != nil {
+			writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to determine blob size")
+			return
+		}
+		if err := s.trackRegistryBlobDigest(c.Request.Context(), digest, size); err != nil {
 			logError(fmt.Errorf("could not update registry blob index for %s: %w", digest, err))
 		}
 		c.Header("Location", fmt.Sprintf("/v2/%s/blobs/%s", repo, digest))
@@ -119,7 +124,12 @@ func (s *Server) finalizeBlobUploadHandler(c *gin.Context, repo, uuid string) {
 		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to finalize blob upload")
 		return
 	}
-	if err := s.trackRegistryBlobDigest(c.Request.Context(), digest); err != nil {
+	size, err := s.registryStorage.BlobSize(c.Request.Context(), digestHex)
+	if err != nil {
+		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to determine blob size")
+		return
+	}
+	if err := s.trackRegistryBlobDigest(c.Request.Context(), digest, size); err != nil {
 		logError(fmt.Errorf("could not update registry blob index for %s: %w", digest, err))
 	}
 
