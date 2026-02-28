@@ -22,14 +22,16 @@ type addRegistryRequest struct {
 }
 
 type registryResponse struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	SizeBytes int64  `json:"sizeBytes"`
 }
 
 type addRegistryResponse struct {
-	ID     string         `json:"id"`
-	Name   string         `json:"name"`
-	APIKey apiKeyResponse `json:"apiKey"`
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	SizeBytes int64          `json:"sizeBytes"`
+	APIKey    apiKeyResponse `json:"apiKey"`
 }
 
 type listRegistriesResponse struct {
@@ -76,8 +78,9 @@ func (s *Server) listRegistriesHandler(c *gin.Context) {
 	}
 	for _, registry := range registries {
 		resp.Registries = append(resp.Registries, registryResponse{
-			ID:   registry.ID.String(),
-			Name: registry.Name,
+			ID:        registry.ID.String(),
+			Name:      registry.Name,
+			SizeBytes: registry.CachedSizeBytes,
 		})
 	}
 	c.JSON(http.StatusOK, resp)
@@ -116,9 +119,24 @@ func (s *Server) getRegistryByIDHandler(c *gin.Context) {
 		return
 	}
 
+	sizeBytes, err := s.db.GetRegistryReferencedBlobBytesCached(c.Request.Context(), registry.ID, 60*time.Second)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "registry not found"})
+			return
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not compute registry size"})
+		return
+	}
+
 	c.JSON(http.StatusOK, registryResponse{
-		ID:   registry.ID.String(),
-		Name: registry.Name,
+		ID:        registry.ID.String(),
+		Name:      registry.Name,
+		SizeBytes: sizeBytes,
 	})
 }
 
@@ -255,8 +273,9 @@ func (s *Server) addRegistryHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, addRegistryResponse{
-		ID:     result.Registry.ID.String(),
-		Name:   result.Registry.Name,
-		APIKey: s.buildAPIKeyResponse(result.APIKey, fullKey),
+		ID:        result.Registry.ID.String(),
+		Name:      result.Registry.Name,
+		SizeBytes: 0,
+		APIKey:    s.buildAPIKeyResponse(result.APIKey, fullKey),
 	})
 }

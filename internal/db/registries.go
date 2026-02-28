@@ -2,14 +2,17 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
 
 type Registry struct {
-	ID    uuid.UUID
-	OrgID uuid.UUID
-	Name  string
+	ID                  uuid.UUID
+	OrgID               uuid.UUID
+	Name                string
+	CachedSizeBytes     int64
+	CachedSizeUpdatedAt *time.Time
 }
 
 type AddRegistryArgs struct {
@@ -112,7 +115,7 @@ func (d *DB) AddRegistryWithKey(ctx context.Context, args AddRegistryWithKeyArgs
 }
 
 func (d *DB) ListRegistriesByOrg(ctx context.Context, orgID uuid.UUID) ([]Registry, error) {
-	const cmd = `SELECT id, org_id, name
+	const cmd = `SELECT id, org_id, name, cached_size_bytes, cached_size_updated_at
 		FROM registries
 		WHERE org_id = $1
 		ORDER BY name ASC`
@@ -125,7 +128,13 @@ func (d *DB) ListRegistriesByOrg(ctx context.Context, orgID uuid.UUID) ([]Regist
 	registries := make([]Registry, 0)
 	for rows.Next() {
 		var registry Registry
-		if err := rows.Scan(&registry.ID, &registry.OrgID, &registry.Name); err != nil {
+		if err := rows.Scan(
+			&registry.ID,
+			&registry.OrgID,
+			&registry.Name,
+			&registry.CachedSizeBytes,
+			&registry.CachedSizeUpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		registries = append(registries, registry)
@@ -137,7 +146,7 @@ func (d *DB) ListRegistriesByOrg(ctx context.Context, orgID uuid.UUID) ([]Regist
 }
 
 func (d *DB) GetRegistryByID(ctx context.Context, id uuid.UUID) (Registry, error) {
-	const cmd = `SELECT id, org_id, name
+	const cmd = `SELECT id, org_id, name, cached_size_bytes, cached_size_updated_at
 		FROM registries
 		WHERE id = $1`
 	var registry Registry
@@ -145,6 +154,8 @@ func (d *DB) GetRegistryByID(ctx context.Context, id uuid.UUID) (Registry, error
 		&registry.ID,
 		&registry.OrgID,
 		&registry.Name,
+		&registry.CachedSizeBytes,
+		&registry.CachedSizeUpdatedAt,
 	)
 	if err != nil {
 		if isNoRows(err) {
@@ -156,7 +167,7 @@ func (d *DB) GetRegistryByID(ctx context.Context, id uuid.UUID) (Registry, error
 }
 
 func (d *DB) GetRegistryByName(ctx context.Context, name string) (Registry, error) {
-	const cmd = `SELECT id, org_id, name
+	const cmd = `SELECT id, org_id, name, cached_size_bytes, cached_size_updated_at
 		FROM registries
 		WHERE name = $1`
 	var registry Registry
@@ -164,6 +175,8 @@ func (d *DB) GetRegistryByName(ctx context.Context, name string) (Registry, erro
 		&registry.ID,
 		&registry.OrgID,
 		&registry.Name,
+		&registry.CachedSizeBytes,
+		&registry.CachedSizeUpdatedAt,
 	)
 	if err != nil {
 		if isNoRows(err) {
@@ -172,4 +185,68 @@ func (d *DB) GetRegistryByName(ctx context.Context, name string) (Registry, erro
 		return Registry{}, err
 	}
 	return registry, nil
+}
+
+func (d *DB) GetRegistryReferencedBlobBytesCached(ctx context.Context, registryID uuid.UUID, maxAge time.Duration) (int64, error) {
+	if maxAge <= 0 {
+		maxAge = 60 * time.Second
+	}
+
+	tx, err := d.conn.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+
+	var cachedSizeBytes int64
+	var cachedSizeUpdatedAt *time.Time
+	const selectRegistryCmd = `SELECT cached_size_bytes, cached_size_updated_at
+		FROM registries
+		WHERE id = $1
+		FOR UPDATE`
+	if err := tx.QueryRow(ctx, selectRegistryCmd, registryID).Scan(&cachedSizeBytes, &cachedSizeUpdatedAt); err != nil {
+		if isNoRows(err) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+
+	if cachedSizeUpdatedAt != nil && time.Since(cachedSizeUpdatedAt.UTC()) < maxAge {
+		if err := tx.Commit(ctx); err != nil {
+			return 0, err
+		}
+		return cachedSizeBytes, nil
+	}
+
+	const recomputeCmd = `SELECT COALESCE(SUM(b.size_bytes), 0)
+		FROM (
+			SELECT DISTINCT mb.blob_digest
+			FROM repositories r
+			JOIN manifest_refs mr
+			  ON mr.repository_id = r.id
+			JOIN manifest_blob_refs mb
+			  ON mb.repository_id = mr.repository_id
+			 AND mb.manifest_digest = mr.manifest_digest
+			WHERE r.registry_id = $1
+		) referenced
+		JOIN blobs b
+		  ON b.digest = referenced.blob_digest`
+
+	var computedSizeBytes int64
+	if err := tx.QueryRow(ctx, recomputeCmd, registryID).Scan(&computedSizeBytes); err != nil {
+		return 0, err
+	}
+
+	const updateCacheCmd = `UPDATE registries
+		SET cached_size_bytes = $2,
+		    cached_size_updated_at = NOW()
+		WHERE id = $1`
+	if _, err := tx.Exec(ctx, updateCacheCmd, registryID, computedSizeBytes); err != nil {
+		return 0, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return computedSizeBytes, nil
 }

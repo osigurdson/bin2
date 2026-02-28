@@ -34,7 +34,9 @@ CREATE TABLE registries (
   id UUID PRIMARY KEY,
   org_id UUID NOT NULL
     REFERENCES organizations(id) ON DELETE CASCADE,
-  name TEXT NOT NULL
+  name TEXT NOT NULL,
+  cached_size_bytes BIGINT NOT NULL DEFAULT 0 CHECK (cached_size_bytes >= 0),
+  cached_size_updated_at TIMESTAMPTZ
 );
 CREATE UNIQUE INDEX unique_registry_nam ON registries (name);
 CREATE INDEX idx_registry_org_id ON registries (org_id);
@@ -51,7 +53,7 @@ CREATE TABLE repositories (
 );
 
 CREATE INDEX idx_repositories_registry_id
-  ON repositories (registry_id, name);
+  ON repositories (registry_id, id);
 
 -- api keys
 CREATE TYPE api_key_permission AS ENUM ('read', 'write', 'admin');

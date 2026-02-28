@@ -50,6 +50,7 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 
 	normalizedBlobDigests := make([]string, 0, len(blobDigests))
 	seenBlobDigests := make(map[string]struct{}, len(blobDigests))
+	blobSizes := make(map[string]int64, len(blobDigests))
 	for _, digest := range blobDigests {
 		digestHex, err := parseDigest(digest)
 		if err != nil {
@@ -57,17 +58,27 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 			return
 		}
 		normalizedDigest := "sha256:" + digestHex
-		if _, ok := seenBlobDigests[normalizedDigest]; !ok {
-			seenBlobDigests[normalizedDigest] = struct{}{}
-			normalizedBlobDigests = append(normalizedBlobDigests, normalizedDigest)
+		if _, ok := seenBlobDigests[normalizedDigest]; ok {
+			continue
 		}
-		exists, err := s.registryStorage.BlobExists(c.Request.Context(), digestHex)
+		size, err := s.registryStorage.BlobSize(c.Request.Context(), digestHex)
+		if errors.Is(err, ErrBlobNotFound) {
+			writeOCIError(c, http.StatusBadRequest, "MANIFEST_BLOB_UNKNOWN", "referenced blob not found")
+			return
+		}
 		if err != nil {
 			writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to validate referenced blob")
 			return
 		}
-		if !exists {
-			writeOCIError(c, http.StatusBadRequest, "MANIFEST_BLOB_UNKNOWN", "referenced blob not found")
+
+		seenBlobDigests[normalizedDigest] = struct{}{}
+		normalizedBlobDigests = append(normalizedBlobDigests, normalizedDigest)
+		blobSizes[normalizedDigest] = size
+	}
+
+	for _, blobDigest := range normalizedBlobDigests {
+		if err := s.trackRegistryBlobDigest(c.Request.Context(), blobDigest, blobSizes[blobDigest]); err != nil {
+			writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to index referenced blob")
 			return
 		}
 	}
