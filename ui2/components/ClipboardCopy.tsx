@@ -28,6 +28,8 @@ export default function ClipboardCopy({ copyText }: { copyText: string; }) {
     <button
       className="btn btn-sm btn-ghost"
       type="button"
+      title="Copy key"
+
       onClick={handleCopy}>
       {copied ? <Check className="text-success" size={14} /> : <Copy size={14} />}
     </button>
