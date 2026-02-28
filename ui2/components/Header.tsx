@@ -4,12 +4,11 @@ import Link from "next/link";
 import Image, { type ImageLoaderProps } from "next/image";
 import Logo from "./Logo";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
-import { signOut } from "@workos-inc/authkit-nextjs";
 
 const passthroughImageLoader = ({ src }: ImageLoaderProps) => src;
 
 export default function Header() {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const fallbackInitial = user?.firstName?.[0] ?? user?.email?.[0] ?? '?';
 
   return (
@@ -48,9 +47,7 @@ export default function Header() {
               className="dropdown-content menu z-20 mt-2 w-40 rounded-box border border-base-300 bg-base-100 p-2 shadow-sm"
             >
               <li>
-                <form action={() => signOut()}>
-                  <button type="submit">Sign out</button>
-                </form>
+                <button type="button" onClick={() => signOut()}>Sign out</button>
               </li>
             </ul>
           </div>
