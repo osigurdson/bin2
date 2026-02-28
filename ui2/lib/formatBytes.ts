@@ -1,5 +1,5 @@
 export function formatBytes(bytes: number): string {
-  const units = ["B", "KB", "MB", "GB", "TB"];
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
   let value = Number.isFinite(bytes) ? Math.max(0, bytes) : 0;
   let unitIndex = 0;
 
