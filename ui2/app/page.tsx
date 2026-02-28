@@ -1,21 +1,143 @@
 import Link from "next/link";
 import { getSignInUrl, withAuth } from "@workos-inc/authkit-nextjs";
+import styles from "./page.module.css";
 
 export default async function Home() {
   const { user } = await withAuth();
   const signInUrl = await getSignInUrl();
 
-  if (user) {
-    return (
-      <div>
-        <Link href="/dashboard">dashboard</Link>
-      </div>
-    );
-  }
-
   return (
-    <div>
-      <a href={signInUrl}>Sign in</a>
+    <div className={styles.container}>
+      <div className={styles.aboveFold}>
+        <header className={styles.header}>
+          <Link className={styles.logo} href="/">
+            bin<sub>2</sub>
+          </Link>
+          <nav className={styles.nav}>
+            <a href="#pricing" className={styles.navLink}>
+              pricing
+            </a>
+            <Link href="/docs" className={styles.navLink}>
+              docs
+            </Link>
+            {user ? (
+              <Link href="/dashboard" className={styles.btn}>
+                dashboard
+              </Link>
+            ) : (
+              <a href={signInUrl} className={styles.btn}>
+                login
+              </a>
+            )}
+          </nav>
+        </header>
+
+        <div className={styles.hero}>
+          <h1>
+            bin<sub>2</sub>
+          </h1>
+          <p className={styles.tagline}>
+            the ridiculously cheap, fast and simple container registry
+          </p>
+          <a href="#pricing" className={styles.cta}>
+            see pricing
+          </a>
+        </div>
+      </div>
+
+      <section id="pricing" className={styles.section}>
+        <h2 className={styles.sectionTitle}>Pricing</h2>
+        <div className={styles.tiers}>
+          <div className={styles.tier}>
+            <h3>Free</h3>
+            <div className={styles.price}>
+              $0<span>/mo</span>
+            </div>
+            <ul>
+              <li>1 GB storage</li>
+              <li>Unlimited pulls</li>
+              <li>1 private repo</li>
+            </ul>
+          </div>
+
+          <div className={styles.tier}>
+            <h3>Starter</h3>
+            <div className={styles.price}>
+              $5<span>/mo</span>
+            </div>
+            <ul>
+              <li>100 GB storage</li>
+              <li>Unlimited pulls</li>
+              <li>Unlimited repos</li>
+            </ul>
+          </div>
+
+          <div className={styles.tier}>
+            <h3>Enterprise</h3>
+            <div className={styles.price}>Call</div>
+            <ul>
+              <li>Unlimited storage</li>
+              <li>Unlimited pulls</li>
+              <li>Priority support</li>
+              <li>Host in your own Cloudflare account</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="pricing-explainer" className={styles.section}>
+        <h2 className={styles.sectionTitle}>
+          Why is it the cheapest and the fastest?
+        </h2>
+        <p className={styles.subtitle}>
+          Container storage ought to be a commodity. We treat it that way and
+          remove the expensive parts of the pipeline and leverage Cloudflare&apos;s
+          global CDN for incredible speed.
+        </p>
+        <div className={styles.explainer}>
+          <div>
+            <h3>Direct to R2</h3>
+            <p>
+              Standard registries write layers to registry storage first, then
+              sync to object storage. bin2 streams layers straight to Cloudflare
+              R2 during build, so there&apos;s no double-storage or internal
+              bandwidth.
+            </p>
+          </div>
+          <div>
+            <h3>R2 economics</h3>
+            <p>
+              R2 is Cloudflare&apos;s hyper-competitive S3-equivalent storage, and
+              Cloudflare doesn&apos;t charge for egress. With the data path built
+              around R2 from day one, the cost floor is fundamentally lower than
+              registries built on S3-style storage.
+            </p>
+          </div>
+          <div>
+            <h3>CLI-optimized push</h3>
+            <p>
+              Standard push clients expect the classic registry upload
+              endpoints. Our CLI uses the R2-native push path and still gives
+              you everything you need to build, tag, and manage images.
+            </p>
+          </div>
+          <div>
+            <h3>Your Cloudflare account</h3>
+            <p>
+              You can use our SaaS or host it yourself. We provide the logic,
+              Cloudflare provides the infrastructure, and you own all the data
+              in your own account with the same R2-native architecture.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <footer className={styles.footer}>
+        <p>
+          bin2 &copy; 2025 &middot; <a href="#">terms</a> &middot;{" "}
+          <a href="#">privacy</a>
+        </p>
+      </footer>
     </div>
   );
 }

@@ -10,6 +10,11 @@ Implemented endpoints:
 - `GET|HEAD /v2/:repo/manifests/:reference`
 - `GET|HEAD /v2/:repo/blobs/:digest`
 
+Storage/read model:
+
+- Manifests are fetched from the Go API (`REGISTRY_API_ORIGIN`)
+- Blobs are read directly from R2 (`BUCKET`)
+
 Not implemented:
 
 - `/v2/token` (served by Go API at `localhost:5000`)
@@ -31,7 +36,11 @@ Not implemented:
 - `REGISTRY_SERVICE`
 - `REGISTRY_TOKEN_REALM`
 - `REGISTRY_JWKS_URL`
+- `REGISTRY_API_ORIGIN` (direct Go API origin used for manifest fetches)
 - R2 bucket binding `BUCKET` (configured to `bin2`)
+
+`REGISTRY_API_ORIGIN` must point to the Go API origin, not the worker origin.
+If this is set to the worker origin, manifest requests will recurse.
 
 For local `wrangler dev`, keep `[[r2_buckets]].remote = true` so pull reads
 the real R2 bucket instead of local emulated R2 state.

@@ -6,6 +6,7 @@ compatibility_date = "2024-01-01"
 REGISTRY_SERVICE = "bin2.nthesis.ai"
 REGISTRY_TOKEN_REALM = "https://bin2.nthesis.ai/v2/token"
 REGISTRY_JWKS_URL = "https://bin2.nthesis.ai/.well-known/jwks.json"
+REGISTRY_API_ORIGIN = "https://bin2.nthesis.ai"
 
 [[r2_buckets]]
 binding = "BUCKET"

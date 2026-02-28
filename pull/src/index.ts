@@ -8,7 +8,6 @@ const apiVersion = "registry/2.0";
 const defaultService = "localhost:5000";
 const defaultTokenRealm = "http://localhost:5000/v2/token";
 const defaultBlobType = "application/octet-stream";
-const defaultManifestType = "application/vnd.oci.image.manifest.v1+json";
 
 const repoSegmentRe = /^[A-Za-z0-9._-]+$/;
 const registryNameRe = /^[A-Za-z0-9_-]+$/;
@@ -19,6 +18,7 @@ type Env = {
   REGISTRY_SERVICE?: string;
   REGISTRY_TOKEN_REALM?: string;
   REGISTRY_JWKS_URL?: string;
+  REGISTRY_API_ORIGIN?: string;
 };
 
 type RegistryTokenAccess = {
@@ -126,36 +126,58 @@ async function handleManifest(
     );
   }
 
-  const key = manifestObjectKey(repo, reference);
-  const object = await env.BUCKET.get(key);
-  if (object === null) {
+  const reqURL = new URL(request.url);
+  const upstreamOrigin = apiOrigin(env);
+  if (reqURL.origin === upstreamOrigin) {
     return ociError(
       method,
-      404,
-      "MANIFEST_UNKNOWN",
-      "manifest unknown",
+      500,
+      "UNKNOWN",
+      "REGISTRY_API_ORIGIN must target the API origin, not the worker origin",
     );
   }
 
-  const bytes = await object.arrayBuffer();
-  const digest = await digestSHA256(bytes);
-  const contentType = manifestType(object.httpMetadata?.contentType);
+  const upstreamURL = new URL(`/v2/${repo}/manifests/${reference}`, upstreamOrigin);
+  upstreamURL.search = reqURL.search;
 
-  const headers = apiHeaders({
-    "Content-Type": contentType,
-    "Content-Length": String(bytes.byteLength),
-    "Docker-Content-Digest": digest,
-  });
+  const forwardHeaders = new Headers();
+  const authHeader = request.headers.get("Authorization");
+  if (authHeader !== null) {
+    forwardHeaders.set("Authorization", authHeader);
+  }
+  const accept = request.headers.get("Accept");
+  if (accept !== null) {
+    forwardHeaders.set("Accept", accept);
+  }
+
+  let upstreamResponse: Response;
+  try {
+    upstreamResponse = await fetch(upstreamURL.toString(), {
+      method,
+      headers: forwardHeaders,
+      redirect: "manual",
+    });
+  } catch {
+    return ociError(
+      method,
+      502,
+      "UNKNOWN",
+      "failed to load manifest",
+    );
+  }
+
+  const headers = new Headers(upstreamResponse.headers);
+  headers.set("Docker-Distribution-Api-Version", apiVersion);
 
   if (method === "HEAD") {
     return new Response(null, {
-      status: 200,
+      status: upstreamResponse.status,
       headers,
     });
   }
 
-  return new Response(bytes, {
-    status: 200,
+  return new Response(upstreamResponse.body, {
+    status: upstreamResponse.status,
     headers,
   });
 }
@@ -499,39 +521,12 @@ function blobObjectKey(digestHex: string): string {
   return `blobs/sha256/${digestHex.slice(0, 2)}/${digestHex}`;
 }
 
-function manifestObjectKey(repo: string, reference: string): string {
-  return `repositories/${repo}/manifests/${reference}.json`;
-}
-
 function blobType(contentType: string | undefined): string {
   const trimmed = (contentType ?? "").trim();
   if (trimmed === "") {
     return defaultBlobType;
   }
   return trimmed;
-}
-
-function manifestType(contentType: string | undefined): string {
-  const trimmed = (contentType ?? "").trim();
-  if (trimmed === "") {
-    return defaultManifestType;
-  }
-  const segments = trimmed.split(";");
-  const mediaType = segments[0].trim();
-  if (mediaType === "") {
-    return defaultManifestType;
-  }
-  return mediaType;
-}
-
-async function digestSHA256(data: ArrayBuffer): Promise<string> {
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  const bytes = new Uint8Array(hash);
-  let out = "";
-  for (const b of bytes) {
-    out += b.toString(16).padStart(2, "0");
-  }
-  return `sha256:${out}`;
 }
 
 function serviceName(env: Env): string {
@@ -568,4 +563,12 @@ function jwksURL(env: Env): string {
 
   const realm = tokenRealm(env);
   return `${new URL(realm).origin}/.well-known/jwks.json`;
+}
+
+function apiOrigin(env: Env): string {
+  const explicit = (env.REGISTRY_API_ORIGIN ?? "").trim();
+  if (explicit !== "") {
+    return new URL(explicit).origin;
+  }
+  return new URL(tokenRealm(env)).origin;
 }
