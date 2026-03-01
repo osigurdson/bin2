@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAccessToken } from '@workos-inc/authkit-nextjs/components';
 import { apiV1Url } from '@/api/client';
 import { ListRegistriesResponse, Registry } from './types';
+import { CurrentUser } from '@/api/users/types';
 
 export class CreateRegistryError extends Error {
   status: number;
@@ -123,6 +124,10 @@ export function useCreateRegistry(
             registries: [created, ...registries],
           };
         }
+      );
+      queryClient.setQueryData<CurrentUser>(
+        ['current-user'],
+        { onboarded: true },
       );
 
       onSuccess?.(created);

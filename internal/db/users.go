@@ -7,9 +7,10 @@ import (
 )
 
 type User struct {
-	ID    uuid.UUID
-	Sub   string
-	Email string
+	ID        uuid.UUID
+	Sub       string
+	Email     string
+	Onboarded bool
 }
 
 func (d *DB) EnsureUser(ctx context.Context, sub, email string) (User, error) {
@@ -40,9 +41,9 @@ func (d *DB) EnsureUser(ctx context.Context, sub, email string) (User, error) {
 	const cmd = `INSERT INTO users (id, sub, email)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (sub) DO UPDATE SET email = EXCLUDED.email
-		RETURNING id, sub, email`
+		RETURNING id, sub, email, onboarded`
 	if err := d.conn.QueryRow(ctx, cmd, newUser.ID, newUser.Sub, newUser.Email).
-		Scan(&newUser.ID, &newUser.Sub, &newUser.Email); err != nil {
+		Scan(&newUser.ID, &newUser.Sub, &newUser.Email, &newUser.Onboarded); err != nil {
 		if isUniqueViolation(err) {
 			return User{}, ErrConflict
 		}
@@ -53,9 +54,9 @@ func (d *DB) EnsureUser(ctx context.Context, sub, email string) (User, error) {
 }
 
 func (d *DB) GetUserBySub(ctx context.Context, sub string) (User, error) {
-	const cmd = `SELECT id, sub, email FROM users WHERE sub = $1`
+	const cmd = `SELECT id, sub, email, onboarded FROM users WHERE sub = $1`
 	var user User
-	if err := d.conn.QueryRow(ctx, cmd, sub).Scan(&user.ID, &user.Sub, &user.Email); err != nil {
+	if err := d.conn.QueryRow(ctx, cmd, sub).Scan(&user.ID, &user.Sub, &user.Email, &user.Onboarded); err != nil {
 		if isNoRows(err) {
 			return User{}, ErrNotFound
 		}
@@ -65,9 +66,9 @@ func (d *DB) GetUserBySub(ctx context.Context, sub string) (User, error) {
 }
 
 func (d *DB) GetUserByEmail(ctx context.Context, email string) (User, error) {
-	const cmd = `SELECT id, sub, email FROM users WHERE email = $1`
+	const cmd = `SELECT id, sub, email, onboarded FROM users WHERE email = $1`
 	var user User
-	if err := d.conn.QueryRow(ctx, cmd, email).Scan(&user.ID, &user.Sub, &user.Email); err != nil {
+	if err := d.conn.QueryRow(ctx, cmd, email).Scan(&user.ID, &user.Sub, &user.Email, &user.Onboarded); err != nil {
 		if isNoRows(err) {
 			return User{}, ErrNotFound
 		}
@@ -80,9 +81,9 @@ func (d *DB) UpdateUserSub(ctx context.Context, userID uuid.UUID, sub string) (U
 	const cmd = `UPDATE users
 		SET sub = $1
 		WHERE id = $2
-		RETURNING id, sub, email`
+		RETURNING id, sub, email, onboarded`
 	var user User
-	if err := d.conn.QueryRow(ctx, cmd, sub, userID).Scan(&user.ID, &user.Sub, &user.Email); err != nil {
+	if err := d.conn.QueryRow(ctx, cmd, sub, userID).Scan(&user.ID, &user.Sub, &user.Email, &user.Onboarded); err != nil {
 		if isNoRows(err) {
 			return User{}, ErrNotFound
 		}
@@ -92,4 +93,16 @@ func (d *DB) UpdateUserSub(ctx context.Context, userID uuid.UUID, sub string) (U
 		return User{}, err
 	}
 	return user, nil
+}
+
+func (d *DB) SetUserOnboarded(ctx context.Context, userID uuid.UUID, onboarded bool) error {
+	const cmd = `UPDATE users SET onboarded = $1 WHERE id = $2`
+	tag, err := d.conn.Exec(ctx, cmd, onboarded, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

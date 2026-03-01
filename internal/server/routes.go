@@ -46,4 +46,8 @@ func (s *Server) addRoutes() {
 	apikeys.POST("", s.addAPIKeyHandler)
 	apikeys.GET("", s.listAPIKeysHandler)
 	apikeys.DELETE(":id", s.removeAPIKeyHandler)
+
+	users := api.Group("/users")
+	users.Use(s.authMiddleware())
+	users.GET("/me", s.getCurrentUserHandler)
 }

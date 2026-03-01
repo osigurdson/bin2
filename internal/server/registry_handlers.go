@@ -273,6 +273,14 @@ func (s *Server) addRegistryHandler(c *gin.Context) {
 		return
 	}
 
+	if !u.onboarded {
+		if err := s.db.SetUserOnboarded(c.Request.Context(), u.id, true); err != nil {
+			logError(err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create registry"})
+			return
+		}
+	}
+
 	c.JSON(http.StatusCreated, addRegistryResponse{
 		ID:        result.Registry.ID.String(),
 		Name:      result.Registry.Name,

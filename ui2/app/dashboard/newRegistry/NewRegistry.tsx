@@ -1,17 +1,21 @@
 'use client';
 
 import { useCreateRegistry, useGetRegistryExists } from "@/api/registries/hooks";
+import { useGetCurrentUser } from "@/api/users/hooks";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export default function NewRegistry() {
   const router = useRouter();
   const [name, setName] = useState('');
+  const [suppressAvailability, setSuppressAvailability] = useState(false);
   const debouncedName = useDebounce(name, 400);
-  const { data: exists } = useGetRegistryExists(debouncedName);
+  const { data: currentUser, isLoading: isLoadingCurrentUser } = useGetCurrentUser();
   const { mutate, isPending } = useCreateRegistry((created) => {
-    router.push(`/dashboard/${created.id}`)
+    router.push(`/dashboard/${created.id}`);
   });
+  const registryNameForAvailabilityCheck = isPending || suppressAvailability ? '' : debouncedName;
+  const { data: exists } = useGetRegistryExists(registryNameForAvailabilityCheck);
 
   const canSave = !exists && !!name && !isPending;
 
@@ -20,24 +24,46 @@ export default function NewRegistry() {
     if (slug === name) {
       return;
     }
+    setSuppressAvailability(false);
     setName(slug);
   }
 
   const onSave = () => {
-    mutate({ name: name });
+    if (!canSave) {
+      return;
+    }
+    setSuppressAvailability(true);
+    mutate(
+      { name: name },
+      {
+        onError: () => {
+          setSuppressAvailability(false);
+        },
+      }
+    );
   }
 
   return (
     <div className="flex flex-col items-center justify-center">
-      <div className="flex flex-col w-md">
-        <p>Welcome to bin<sub>2</sub>! We think you will like it very much. It
-          uses an ultra-fast, global CDN backed system for pulling images, with
-          low cost storage and no associated egress charges.
-        </p>
-        <p className="mt-4">
-          Enter a new registry name below to get started. We'll ensure that
-          the name is unique and will create everything needed for you to
-          get started quickly.
+      <form
+        className="flex flex-col w-md"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSave();
+        }}
+      >
+        {!isLoadingCurrentUser && !currentUser?.onboarded && (
+          <>
+            <p>Welcome to bin<sub>2</sub>. Create your first registry to finish setup.</p>
+            <p className="mt-4">
+              It uses an ultra-fast, global CDN backed system for pulling images,
+              with low cost storage and no associated egress charges.
+            </p>
+          </>
+        )}
+        <p className={(!isLoadingCurrentUser && !currentUser?.onboarded) ? "mt-4" : ""}>
+          Enter a new registry name below. We&apos;ll ensure that the name is unique and
+          create everything needed for you to get started quickly.
         </p>
 
         <div className="flex items-center mt-4">
@@ -47,23 +73,24 @@ export default function NewRegistry() {
             spellCheck={false}
             autoCorrect="off"
             autoCapitalize="none"
+            autoFocus
             type="text"
             maxLength={64}
             value={name}
             onChange={(e) => onNameChange(e.target.value)}
           />
-          {exists && (
+          {!isPending && !suppressAvailability && exists && (
             <span className="ml-2 text-error font-semibold ">That name is unavailable. Try a different one.</span>
           )}
         </div>
         <button
           className="btn btn-primary mt-4 w-10px"
+          type="submit"
           disabled={!canSave}
-          onClick={onSave}
         >
           {isPending ? 'Creating...' : 'Create Registry'}
         </button>
-      </div>
+      </form>
     </div>
   );
 }

@@ -1,31 +1,56 @@
 'use client';
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { useGetRegistries } from "@/api/registries/hooks";
+import { useGetCurrentUser } from "@/api/users/hooks";
 import RegistryCard from "./RegistryCard";
 import { formatBytes } from "@/lib/formatBytes";
 
 export default function Dashboard() {
-  const { data, isLoading, isError } = useGetRegistries();
+  const router = useRouter();
+  const {
+    data: currentUser,
+    isLoading: isLoadingCurrentUser,
+    isError: isCurrentUserError,
+  } = useGetCurrentUser();
+  const {
+    data: registriesData,
+    isLoading: isLoadingRegistries,
+    isError: isRegistriesError } = useGetRegistries();
 
-  if (isLoading) {
-    return <div className="p-2 text-sm opacity-70">Loading registries...</div>;
+  useEffect(() => {
+    if (!isLoadingCurrentUser && currentUser && !currentUser.onboarded) {
+      router.replace('/dashboard/newRegistry');
+    }
+  }, [currentUser, isLoadingCurrentUser, router]);
+
+  if (isLoadingCurrentUser || isLoadingRegistries) {
+    return <div className="p-2 text-sm opacity-70">Loading dashboard...</div>;
   }
 
-  if (isError || !data) {
+  if (isCurrentUserError || isRegistriesError || !currentUser || !registriesData) {
     return <div className="p-2 text-sm text-error">Could not load registries.</div>;
   }
 
-  const totalSizeBytes = data.registries.reduce((sum, registry) => {
+  if (!currentUser.onboarded) {
+    return <div className="p-2 text-sm opacity-70">Preparing onboarding...</div>;
+  }
+
+  const totalSizeBytes = registriesData.registries.reduce((sum, registry) => {
     return sum + (registry.sizeBytes ?? 0);
   }, 0);
 
-  if (data.registries.length === 0) {
+  if (registriesData.registries.length === 0) {
     return (
-      <div className="space-y-3">
-        <p className="text-sm opacity-70">No registries yet.</p>
-        <Link href="/dashboard/newRegistry" className="btn btn-sm">
-          Create Registry
+      <div className="max-w-xl rounded-lg border border-base-300 bg-base-100 p-6">
+        <h2 className="text-xl font-bold">Create your first registry</h2>
+        <p className="mt-2 text-sm opacity-75">
+          Your dashboard is ready. Add a registry to start pushing and pulling container images.
+        </p>
+        <Link href="/dashboard/newRegistry" className="btn btn-primary mt-5">
+          Create First Registry
         </Link>
       </div>
     );
@@ -34,10 +59,10 @@ export default function Dashboard() {
   return (
     <div className="flex flex-col max-w-xl">
       <div className="">
-        {data.registries.length} registries  ({formatBytes(totalSizeBytes)})
+        {registriesData.registries.length} registries  ({formatBytes(totalSizeBytes)})
       </div>
       <ul className="space-y-2 mt-4">
-        {data.registries.map((registry) => (
+        {registriesData.registries.map((registry) => (
           <li key={registry.id}>
             <RegistryCard
               id={registry.id}

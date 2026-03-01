@@ -18,10 +18,11 @@ import (
 var errUnauthorized = errors.New("unauthorized")
 
 type user struct {
-	id    uuid.UUID
-	sub   string
-	email string
-	orgID uuid.UUID
+	id        uuid.UUID
+	sub       string
+	email     string
+	orgID     uuid.UUID
+	onboarded bool
 }
 
 type workosJWTClaims struct {
@@ -86,10 +87,11 @@ func (s *Server) getOrCreateUser(ctx context.Context, sub string) (user, error) 
 			return user{}, err
 		}
 		return user{
-			id:    dbUser.ID,
-			sub:   dbUser.Sub,
-			email: dbUser.Email,
-			orgID: orgID,
+			id:        dbUser.ID,
+			sub:       dbUser.Sub,
+			email:     dbUser.Email,
+			orgID:     orgID,
+			onboarded: dbUser.Onboarded,
 		}, nil
 	}
 	if !errors.Is(err, db.ErrNotFound) {
@@ -117,10 +119,11 @@ func (s *Server) getOrCreateUser(ctx context.Context, sub string) (user, error) 
 					return user{}, orgErr
 				}
 				return user{
-					id:    byEmail.ID,
-					sub:   byEmail.Sub,
-					email: byEmail.Email,
-					orgID: orgID,
+					id:        byEmail.ID,
+					sub:       byEmail.Sub,
+					email:     byEmail.Email,
+					orgID:     orgID,
+					onboarded: byEmail.Onboarded,
 				}, nil
 			}
 		}
@@ -133,10 +136,11 @@ func (s *Server) getOrCreateUser(ctx context.Context, sub string) (user, error) 
 	}
 
 	return user{
-		id:    dbUser.ID,
-		sub:   dbUser.Sub,
-		email: dbUser.Email,
-		orgID: orgID,
+		id:        dbUser.ID,
+		sub:       dbUser.Sub,
+		email:     dbUser.Email,
+		orgID:     orgID,
+		onboarded: dbUser.Onboarded,
 	}, nil
 }
 

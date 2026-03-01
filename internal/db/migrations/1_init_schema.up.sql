@@ -5,7 +5,8 @@ CREATE EXTENSION citext;
 CREATE TABLE users (
   id UUID PRIMARY KEY,
   sub TEXT NOT NULL,
-  email citext NOT NULL
+  email citext NOT NULL,
+  onboarded BOOLEAN NOT NULL DEFAULT FALSE
 );
 CREATE UNIQUE INDEX unique_users_sub ON users(sub);
 CREATE UNIQUE INDEX unique_users_email ON users(email);
