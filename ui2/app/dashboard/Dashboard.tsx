@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
-import { useGetRegistries } from "@/api/registries/hooks";
+import { useEffect, useState } from "react";
+import { useDeleteRegistry, useGetRegistries } from "@/api/registries/hooks";
 import { useGetCurrentUser } from "@/api/users/hooks";
 import RegistryCard from "./RegistryCard";
 import { formatBytes } from "@/lib/formatBytes";
+import ConfirmModal from "@/components/ConfirmModal";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -19,12 +20,49 @@ export default function Dashboard() {
     data: registriesData,
     isLoading: isLoadingRegistries,
     isError: isRegistriesError } = useGetRegistries();
+  const [deletingRegistryId, setDeletingRegistryId] = useState<string | null>(null);
+  const [registryPendingConfirm, setRegistryPendingConfirm] = useState<{ id: string; name: string } | null>(null);
+  const { mutate: deleteRegistry, isPending: isDeletePending } = useDeleteRegistry();
 
   useEffect(() => {
     if (!isLoadingCurrentUser && currentUser && !currentUser.onboarded) {
       router.replace('/dashboard/newRegistry');
     }
   }, [currentUser, isLoadingCurrentUser, router]);
+
+  const onDeleteRegistry = (registryId: string, registryName: string) => {
+    if (isDeletePending) {
+      return;
+    }
+    setRegistryPendingConfirm({ id: registryId, name: registryName });
+  };
+
+  const onCancelDeleteRegistry = () => {
+    if (isDeletePending) {
+      return;
+    }
+    setRegistryPendingConfirm(null);
+  };
+
+  const onConfirmDeleteRegistry = () => {
+    if (!registryPendingConfirm) {
+      return;
+    }
+    const target = registryPendingConfirm;
+    setRegistryPendingConfirm(null);
+    setDeletingRegistryId(target.id);
+    deleteRegistry(
+      { id: target.id },
+      {
+        onError: () => {
+          window.alert('Could not delete registry. Please try again.');
+        },
+        onSettled: () => {
+          setDeletingRegistryId(null);
+        },
+      },
+    );
+  };
 
   if (isLoadingCurrentUser || isLoadingRegistries) {
     return <div className="p-2 text-sm opacity-70">Loading dashboard...</div>;
@@ -73,10 +111,24 @@ export default function Dashboard() {
               id={registry.id}
               name={registry.name}
               sizeBytes={registry.sizeBytes}
+              onDelete={onDeleteRegistry}
+              isDeleting={isDeletePending && deletingRegistryId === registry.id}
             />
           </li>
         ))}
       </ul>
+      <ConfirmModal
+        isOpen={!!registryPendingConfirm}
+        title="Delete Registry"
+        message={registryPendingConfirm
+          ? `Delete bin2.io/${registryPendingConfirm.name}? This will permanently remove the registry and all associated repositories and tags.`
+          : ''}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        isConfirming={isDeletePending}
+        confirmAction={onConfirmDeleteRegistry}
+        cancelAction={onCancelDeleteRegistry}
+      />
     </div>
   );
 }

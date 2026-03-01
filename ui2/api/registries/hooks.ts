@@ -14,6 +14,16 @@ export class CreateRegistryError extends Error {
   }
 }
 
+export class DeleteRegistryError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'DeleteRegistryError';
+    this.status = status;
+  }
+}
+
 export function useGetRegistry(registryId: string) {
   const { getAccessToken } = useAccessToken();
 
@@ -131,6 +141,50 @@ export function useCreateRegistry(
       );
 
       onSuccess?.(created);
+    },
+  });
+}
+
+export function useDeleteRegistry(onSuccess?: (registryId: string) => void) {
+  const queryClient = useQueryClient();
+  const { getAccessToken } = useAccessToken();
+
+  return useMutation({
+    mutationFn: async ({ id }: { id: string }) => {
+      const token = await getAccessToken();
+      if (!token) {
+        throw new DeleteRegistryError(401, 'Missing access token');
+      }
+
+      const res = await fetch(apiV1Url(`/registries/${encodeURIComponent(id)}`), {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) {
+        throw new DeleteRegistryError(res.status, `registry delete failed (${res.status})`);
+      }
+
+      return id;
+    },
+
+    onSuccess: (deletedRegistryId) => {
+      queryClient.setQueryData<ListRegistriesResponse>(
+        ['registries'],
+        (previous) => {
+          if (!previous) {
+            return previous;
+          }
+          return {
+            ...previous,
+            registries: previous.registries.filter((r) => r.id !== deletedRegistryId),
+          };
+        }
+      );
+
+      onSuccess?.(deletedRegistryId);
     },
   });
 }

@@ -187,6 +187,18 @@ func (d *DB) GetRegistryByName(ctx context.Context, name string) (Registry, erro
 	return registry, nil
 }
 
+func (d *DB) DeleteRegistryByIDAndOrg(ctx context.Context, id, orgID uuid.UUID) error {
+	const cmd = `DELETE FROM registries WHERE id = $1 AND org_id = $2`
+	tag, err := d.conn.Exec(ctx, cmd, id, orgID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (d *DB) GetRegistryReferencedBlobBytesCached(ctx context.Context, registryID uuid.UUID, maxAge time.Duration) (int64, error) {
 	if maxAge <= 0 {
 		maxAge = 60 * time.Second

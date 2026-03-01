@@ -288,3 +288,33 @@ func (s *Server) addRegistryHandler(c *gin.Context) {
 		APIKey:    s.buildAPIKeyResponse(result.APIKey, fullKey),
 	})
 }
+
+func (s *Server) removeRegistryHandler(c *gin.Context) {
+	u, err := s.getUser(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	idParam := strings.TrimSpace(c.Param("id"))
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid registry id"})
+		return
+	}
+
+	if err := s.db.DeleteRegistryByIDAndOrg(c.Request.Context(), id, u.orgID); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "registry not found"})
+			return
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not remove registry"})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
