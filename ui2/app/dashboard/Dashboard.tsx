@@ -85,7 +85,7 @@ export default function Dashboard() {
       <div className="max-w-xl rounded-lg border border-base-300 bg-base-100 p-6">
         <h2 className="text-xl font-bold">Create your first registry</h2>
         <p className="mt-2 text-sm opacity-75">
-          Your dashboard is ready. Add a registry to start pushing and pulling container images.
+          Add a registry to start pushing and pulling container images.
         </p>
         <Link href="/dashboard/newRegistry" className="btn btn-primary mt-5">
           Create First Registry
@@ -94,11 +94,19 @@ export default function Dashboard() {
     );
   }
 
+  let registriesHeaderText = '';
+  if (registriesData.registries.length > 1) {
+    registriesHeaderText =
+      `${registriesData.registries.length} registries `;
+    if (totalSizeBytes > 0) {
+      registriesHeaderText = `${registriesHeaderText} (${formatBytes(totalSizeBytes)})`;
+    }
+  }
   return (
     <div className="flex flex-col max-w-xl">
       <div className="flex items-center justify-between gap-3">
         <div>
-          {registriesData.registries.length} registries ({formatBytes(totalSizeBytes)})
+          {registriesHeaderText}
         </div>
         <Link href="/dashboard/newRegistry" className="btn btn-sm btn-primary">
           Create Registry
