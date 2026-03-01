@@ -58,8 +58,13 @@ export default function Dashboard() {
 
   return (
     <div className="flex flex-col max-w-xl">
-      <div className="">
-        {registriesData.registries.length} registries  ({formatBytes(totalSizeBytes)})
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          {registriesData.registries.length} registries ({formatBytes(totalSizeBytes)})
+        </div>
+        <Link href="/dashboard/newRegistry" className="btn btn-sm btn-primary">
+          Create Registry
+        </Link>
       </div>
       <ul className="space-y-2 mt-4">
         {registriesData.registries.map((registry) => (
