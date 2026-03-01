@@ -41,6 +41,7 @@ func (s *Server) addRoutes() {
 	repositories := api.Group("/repositories")
 	repositories.Use(s.authMiddleware())
 	repositories.GET("", s.listRepositoriesHandler)
+	repositories.DELETE("/:id", s.removeRepositoryHandler)
 
 	apikeys := api.Group("/api-keys")
 	apikeys.Use(s.authMiddleware())

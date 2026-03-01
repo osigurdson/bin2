@@ -5,10 +5,13 @@ import Repositories from "./Repositories";
 import { useGetRegistry } from "@/api/registries/hooks";
 import { useGetAPIKeys } from "@/api/apikeys/hooks";
 import { formatBytes } from "@/lib/formatBytes";
+import { useState } from "react";
+import type { ClientType } from "./Commands";
 
 export default function RegistryView({ registryId }: { registryId: string }) {
   const { data: registry } = useGetRegistry(registryId);
   const { data: keysData } = useGetAPIKeys();
+  const [selectedClient, setSelectedClient] = useState<ClientType>('docker');
 
   if (!registry) {
     return <div>Loading...</div>;
@@ -24,8 +27,14 @@ export default function RegistryView({ registryId }: { registryId: string }) {
         <div className="mb-4">
           <span>Registry: <b>bin2.io/{registry.name}</b> <RegistrySizeDisplay sizeBytes={registry.sizeBytes} /></span>
         </div>
-        <Commands id={registry.id} name={registry.name} apiKeys={registryKeys} />
-        <Repositories registryId={registry.id} />
+        <Commands
+          id={registry.id}
+          name={registry.name}
+          apiKeys={registryKeys}
+          selectedClient={selectedClient}
+          onSelectedClientChange={setSelectedClient}
+        />
+        <Repositories registryId={registry.id} registryName={registry.name} selectedClient={selectedClient} />
       </div>
     </>
   )

@@ -7,6 +7,7 @@ import "./globals.css";
 const spaceMono = Space_Mono({
   subsets: ["latin"],
   weight: ["400", "700"],
+  variable: "--font-space-mono",
 });
 
 
@@ -26,7 +27,7 @@ export default async function RootLayout({
   const { accessToken: _accessToken, ...auth } = await withAuth();
 
   return (
-    <html lang="en" className={spaceMono.className} data-theme="light">
+    <html lang="en" className={`${spaceMono.className} ${spaceMono.variable}`} data-theme="light">
       <body>
         <AuthKitProvider initialAuth={auth}>
           {children}

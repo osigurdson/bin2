@@ -203,6 +203,65 @@ func (s *Server) listRepositoriesHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+func (s *Server) removeRepositoryHandler(c *gin.Context) {
+	u, err := s.getUser(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	repositoryIDParam := strings.TrimSpace(c.Param("id"))
+	repositoryID, err := uuid.Parse(repositoryIDParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid repository id"})
+		return
+	}
+
+	registryIDParam := strings.TrimSpace(c.Query("registryId"))
+	if registryIDParam == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "registryId is required"})
+		return
+	}
+	registryID, err := uuid.Parse(registryIDParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid registryId"})
+		return
+	}
+
+	registry, err := s.db.GetRegistryByID(c.Request.Context(), registryID)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "registry not found"})
+			return
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get registry"})
+		return
+	}
+	if registry.OrgID != u.orgID {
+		c.JSON(http.StatusNotFound, gin.H{"error": "registry not found"})
+		return
+	}
+
+	if err := s.db.DeleteRepositoryByIDAndRegistryID(c.Request.Context(), repositoryID, registryID); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "repository not found"})
+			return
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not remove repository"})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
 func (s *Server) getRegistryExistsHandler(c *gin.Context) {
 	name := strings.TrimSpace(c.Query("name"))
 	if !validRegistryName(name) {

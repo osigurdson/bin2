@@ -111,3 +111,15 @@ func (d *DB) ListRepositoriesByRegistryID(ctx context.Context, registryID uuid.U
 	}
 	return repos, nil
 }
+
+func (d *DB) DeleteRepositoryByIDAndRegistryID(ctx context.Context, repositoryID, registryID uuid.UUID) error {
+	const cmd = `DELETE FROM repositories WHERE id = $1 AND registry_id = $2`
+	tag, err := d.conn.Exec(ctx, cmd, repositoryID, registryID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

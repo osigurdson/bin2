@@ -4,17 +4,21 @@ import ClipboardCopy from "@/components/ClipboardCopy";
 import { useState } from "react";
 import { APIKey } from "@/api/apikeys/types";
 
+export type ClientType = 'docker' | 'podman' | 'oras' | 'k8s';
+
 type CommandProps = {
   id: string;
   name: string;
   apiKeys: APIKey[];
+  selectedClient: ClientType;
+  onSelectedClientChange: (value: ClientType) => void;
 }
 
 export default function Commands(props: CommandProps) {
   const registryAddr = 'localhost:5000';
   const tlsVerify = registryAddr === 'localhost:5000' ? '--tls-verify=false' : '';
-  const [client, setClient] = useState<ClientType>('docker');
   const [selectedKeyId, setSelectedKeyId] = useState<string | null>(null);
+  const client = props.selectedClient;
 
   const activeKey = selectedKeyId
     ? props.apiKeys.find(k => k.id === selectedKeyId) ?? props.apiKeys[0]
@@ -51,7 +55,7 @@ export default function Commands(props: CommandProps) {
         <span className="text-sm opacity-60">No API keys — create one to log in.</span>
       )}
       <div className={`flex ${client === 'k8s' ? 'items-start' : 'items-center'}`}>
-        <ClientSelect value={client} onChange={setClient} />
+        <ClientSelect value={client} onChange={props.onSelectedClientChange} />
         {client === 'k8s' ? (
           <>
             <pre className="text-xs">
@@ -69,8 +73,6 @@ export default function Commands(props: CommandProps) {
     </div>
   );
 }
-
-type ClientType = 'docker' | 'podman' | 'oras' | 'k8s';
 
 type ClientSelectProps = {
   value: ClientType;
