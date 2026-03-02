@@ -24,7 +24,7 @@ type r2RegistryStorage struct {
 	uploader  *transfermanager.Client
 }
 
-func newR2RegistryStorageFromEnv(dataDir string) (registryStorage, error) {
+func newR2RegistryStorageFromEnv(dataDir string) (*r2RegistryStorage, error) {
 	accountID := os.Getenv("R2_ACCOUNT_ID")
 	endpoint := os.Getenv("R2_ENDPOINT")
 	if endpoint == "" {

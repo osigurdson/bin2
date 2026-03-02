@@ -18,7 +18,7 @@ type Server struct {
 	ctx                   context.Context
 	router                *gin.Engine
 	db                    *db.DB
-	registryStorage       registryStorage
+	registryStorage       *r2RegistryStorage
 	registryJWTPrivateKey ed25519.PrivateKey
 	registryJWTPublicKey  ed25519.PublicKey
 	registryService       string
@@ -73,7 +73,7 @@ func New() (*Server, error) {
 	}
 	if err := rs.Init(); err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("could not initialize registry storage backend: %w", err)
+		return nil, fmt.Errorf("could not initialize registry storage: %w", err)
 	}
 
 	registryJWTPrivateKey, registryJWTPublicKey, err := loadRegistryJWTKeys()

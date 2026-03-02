@@ -14,7 +14,7 @@ func TestRegistryV2RequiresAuth(t *testing.T) {
 
 	s := &Server{
 		router:          gin.New(),
-		registryStorage: newLocalRegistryStorage(t.TempDir()),
+		registryStorage: nil,
 	}
 	s.addRegistryRoutes()
 

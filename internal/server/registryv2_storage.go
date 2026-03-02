@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -19,33 +18,9 @@ var (
 	ErrManifestNotFound = errors.New("manifest not found")
 )
 
-type registryStorage interface {
-	Init() error
-	CreateUpload(ctx context.Context, uuid string) error
-	AppendUpload(ctx context.Context, uuid string, body io.Reader) (int64, error)
-	UploadSHA256(ctx context.Context, uuid string) (string, error)
-	DeleteUpload(ctx context.Context, uuid string) error
-	BlobExists(ctx context.Context, digestHex string) (bool, error)
-	BlobSize(ctx context.Context, digestHex string) (int64, error)
-	GetBlob(ctx context.Context, digestHex string) (io.ReadCloser, int64, error)
-	StoreBlobFromUpload(ctx context.Context, uuid, digestHex string) error
-}
-
-func newRegistryStorageFromEnv() (registryStorage, error) {
-	backend := strings.ToLower(strings.TrimSpace(getenvDefault("REGISTRY_STORAGE_BACKEND", "local")))
+func newRegistryStorageFromEnv() (*r2RegistryStorage, error) {
 	dataDir := getenvDefault("REGISTRY_DATA_DIR", "registry-data")
-
-	switch backend {
-	case "r2":
-		return newR2RegistryStorageFromEnv(dataDir)
-	case "local":
-		return newLocalRegistryStorage(dataDir), nil
-	default:
-		return nil, fmt.Errorf(
-			"unsupported REGISTRY_STORAGE_BACKEND=%q (expected: r2|local)",
-			backend,
-		)
-	}
+	return newR2RegistryStorageFromEnv(dataDir)
 }
 
 func newUUID() (string, error) {
