@@ -208,9 +208,9 @@ interface InstructionProps {
 type InstructionComponent = (props: InstructionProps) => React.ReactNode;
 
 function DockerInstruction({ addr, registry, isInsecure }: InstructionProps) {
-  const pullCmd = 'docker pull docker.io/library/hello-world:latest';
+  const pullCmd = 'docker pull hello-world:latest';
   const imageUri = `${addr}/${registry}/hello-world:latest`;
-  const tagCmd = `docker tag docker.io/library/hello-world:latest ${imageUri}`;
+  const tagCmd = `docker tag hello-world:latest ${imageUri}`;
   const pushCmd = `docker push ${imageUri}`;
 
   return (
