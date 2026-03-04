@@ -25,3 +25,7 @@ export function getRegistryInfo(): RegistryInfo {
   }
   return registryInfo;
 }
+
+export function getSignoutRedirect(): string {
+  return isDev() ? 'http://localhost:3000' : 'https://bin2.nthesis.ai';
+}
