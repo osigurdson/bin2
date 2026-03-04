@@ -1,20 +1,7 @@
-const DEV_BACKEND_API_ORIGIN = 'http://localhost:5000';
-
-function trimTrailingSlash(url: string): string {
-  return url.replace(/\/+$/, '');
-}
+import { isDev } from '../lib/runenv';
 
 function getBackendApiOrigin(): string {
-  const configuredOrigin = process.env.NEXT_PUBLIC_BACKEND_API_URL?.trim();
-  if (configuredOrigin) {
-    return trimTrailingSlash(configuredOrigin);
-  }
-
-  if (process.env.NODE_ENV !== 'production') {
-    return DEV_BACKEND_API_ORIGIN;
-  }
-
-  throw new Error('Missing NEXT_PUBLIC_BACKEND_API_URL in production');
+  return isDev() ? 'http://localhost:5000' : 'https://bin2.nthesis.ai';
 }
 
 export function apiV1Url(path: string): string {

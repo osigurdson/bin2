@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -23,6 +25,8 @@ type r2RegistryStorage struct {
 	client    *s3.Client
 	uploader  *transfermanager.Client
 }
+
+const singlePartBlobUploadMaxSize int64 = 128 * 1024 * 1024
 
 func newR2RegistryStorageFromEnv(dataDir string) (*r2RegistryStorage, error) {
 	accountID := os.Getenv("R2_ACCOUNT_ID")
@@ -75,7 +79,9 @@ func newR2RegistryStorageFromEnv(dataDir string) (*r2RegistryStorage, error) {
 		bucket:    bucket,
 		uploadDir: filepath.Join(dataDir, "uploads"),
 		client:    client,
-		uploader:  transfermanager.New(client),
+		uploader: transfermanager.New(client, func(o *transfermanager.Options) {
+			o.PartSizeBytes = 64 * 1024 * 1024
+		}),
 	}, nil
 }
 
@@ -107,6 +113,11 @@ func (r *r2RegistryStorage) AppendUpload(
 	}
 	defer f.Close()
 
+	tag := uuid[len(uuid)-4:]
+
+	log.Printf("fu: start %s", tag)
+	start := time.Now()
+
 	if _, err := io.Copy(f, body); err != nil {
 		return 0, err
 	}
@@ -114,6 +125,9 @@ func (r *r2RegistryStorage) AppendUpload(
 	if err != nil {
 		return 0, err
 	}
+	log.Printf("fu: end %s, time: %.2f, size: %d",
+		tag, time.Since(start).Seconds(),
+		info.Size()/1024)
 	return info.Size(), nil
 }
 
@@ -199,34 +213,47 @@ func (r *r2RegistryStorage) StoreBlobFromUpload(
 	ctx context.Context,
 	uuid string,
 	digestHex string,
-) error {
-	exists, err := r.BlobExists(ctx, digestHex)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return r.DeleteUpload(ctx, uuid)
-	}
-
+) (int64, error) {
 	f, err := os.Open(r.uploadPath(uuid))
 	if errors.Is(err, os.ErrNotExist) {
-		return ErrUploadNotFound
+		return 0, ErrUploadNotFound
 	}
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer f.Close()
 
-	_, err = r.uploader.UploadObject(ctx, &transfermanager.UploadObjectInput{
-		Bucket:      aws.String(r.bucket),
-		Key:         aws.String(blobObjectKey(digestHex)),
-		Body:        f,
-		ContentType: aws.String(defaultBlobContentType),
-	})
+	info, err := f.Stat()
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return r.DeleteUpload(ctx, uuid)
+
+	tag := string(uuid[len(uuid)-4:])
+	now := time.Now()
+	log.Printf("r2ul: %s start... size=%d", tag, info.Size())
+	if info.Size() < singlePartBlobUploadMaxSize {
+		_, err = r.client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:      aws.String(r.bucket),
+			Key:         aws.String(blobObjectKey(digestHex)),
+			Body:        f,
+			ContentType: aws.String(defaultBlobContentType),
+		})
+	} else {
+		_, err = r.uploader.UploadObject(ctx, &transfermanager.UploadObjectInput{
+			Bucket:      aws.String(r.bucket),
+			Key:         aws.String(blobObjectKey(digestHex)),
+			Body:        f,
+			ContentType: aws.String(defaultBlobContentType),
+		})
+	}
+	log.Printf("r2ul: %s done. time: %.1f", tag, time.Since(now).Seconds())
+	if err != nil {
+		return 0, err
+	}
+	if err := r.DeleteUpload(ctx, uuid); err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
 }
 
 func (r *r2RegistryStorage) StoreManifest(

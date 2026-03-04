@@ -1,0 +1,19 @@
+ubuntu	ubuntu:24.04, ubuntu:22.04, ubuntu:latest	Base Linux images
+alpine	alpine:3.19, alpine:3.20, alpine:latest	Very small base (~5–7 MB)
+nginx	nginx:1.25, nginx:1.25-alpine, nginx:stable	Popular web server
+redis	redis:7, redis:7-alpine, redis:latest	In-memory cache
+postgres	postgres:16, postgres:15, postgres:16-alpine	PostgreSQL DB
+mysql	mysql:8.0, mysql:8.4, mysql:latest	MySQL server
+node	node:22, node:20-alpine, node:lts	Node.js runtime
+python	python:3.12, python:3.11-slim, python:3.12-alpine	Python runtime
+busybox	busybox:1.36, busybox:latest	Minimal Unix tools
+httpd	httpd:2.4, httpd:2.4-alpine	Apache web server
+
+tensorflow/tensorflow	tensorflow/tensorflow:latest-gpu	~6–8 GB	CUDA + ML libraries
+pytorch/pytorch	pytorch/pytorch:latest	~4–6 GB	Python + ML stack
+mcr.microsoft.com/dotnet/sdk	:8.0	~1.5–2.5 GB	Full build toolchain
+mysql	mysql:8.0	~600–900 MB	Database + OS
+postgres	postgres:16	~400–700 MB	Database + Debian
+gitlab/gitlab-ce	gitlab/gitlab-ce:latest	~2–3 GB	Entire GitLab platform
+jupyter/scipy-notebook	latest	~2–4 GB	Python data science stack
+jenkins/jenkins	lts	~400–800 MB	Java runtime + Jenkins

@@ -1,0 +1,27 @@
+export function isDev(): boolean {
+  const nodeEnv = process.env.NODE_ENV;
+  if (nodeEnv === "production") {
+    return false;
+  } else if (nodeEnv === "development") {
+    return true;
+  }
+  throw Error("process.env.NODE_ENV not defined")
+}
+
+export interface RegistryInfo {
+  addr: string,
+  isInsecure: boolean,
+}
+
+export function registryAddr(): string {
+  return isDev() ? 'localhost:5000' : 'bin2.nthesis.ai';
+}
+
+export function getRegistryInfo(): RegistryInfo {
+  const addr = isDev() ? 'localhost:5000' : 'bin2.nthesis.ai';
+  const registryInfo: RegistryInfo = {
+    addr: addr,
+    isInsecure: isDev(),
+  }
+  return registryInfo;
+}

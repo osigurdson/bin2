@@ -99,18 +99,12 @@ func (s *Server) finalizeBlobUploadHandler(c *gin.Context, repo, uuid string) {
 	}
 
 	digest := "sha256:" + digestHex
-	exists, err := s.registryStorage.BlobExists(c.Request.Context(), digestHex)
+	size, exists, err := s.trackedRegistryBlobSize(c.Request.Context(), digest)
 	if err != nil {
-		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to check blob existence")
-		return
+		logError(fmt.Errorf("could not read registry blob index for %s: %w", digest, err))
 	}
 	if exists {
 		_ = s.registryStorage.DeleteUpload(c.Request.Context(), uuid)
-		size, err := s.registryStorage.BlobSize(c.Request.Context(), digestHex)
-		if err != nil {
-			writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to determine blob size")
-			return
-		}
 		if err := s.trackRegistryBlobDigest(c.Request.Context(), digest, size); err != nil {
 			logError(fmt.Errorf("could not update registry blob index for %s: %w", digest, err))
 		}
@@ -120,13 +114,9 @@ func (s *Server) finalizeBlobUploadHandler(c *gin.Context, repo, uuid string) {
 		return
 	}
 
-	if err := s.registryStorage.StoreBlobFromUpload(c.Request.Context(), uuid, digestHex); err != nil {
-		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to finalize blob upload")
-		return
-	}
-	size, err := s.registryStorage.BlobSize(c.Request.Context(), digestHex)
+	size, err = s.registryStorage.StoreBlobFromUpload(c.Request.Context(), uuid, digestHex)
 	if err != nil {
-		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to determine blob size")
+		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to finalize blob upload")
 		return
 	}
 	if err := s.trackRegistryBlobDigest(c.Request.Context(), digest, size); err != nil {

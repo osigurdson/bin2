@@ -3,6 +3,7 @@
 import ClipboardCopy from "@/components/ClipboardCopy";
 import { useState } from "react";
 import { APIKey } from "@/api/apikeys/types";
+import { getRegistryInfo } from "@/lib/runenv";
 
 export type ClientType = 'docker' | 'podman' | 'oras' | 'k8s';
 
@@ -11,22 +12,25 @@ type CommandProps = {
   name: string;
   apiKeys: APIKey[];
   selectedClient: ClientType;
-  onSelectedClientChange: (value: ClientType) => void;
+  selectedClientChangeAction: (value: ClientType) => void;
 }
 
 export default function Commands(props: CommandProps) {
-  const registryAddr = 'localhost:5000';
-  const tlsVerify = registryAddr === 'localhost:5000' ? '--tls-verify=false' : '';
+  const { addr, isInsecure } = getRegistryInfo();
   const [selectedKeyId, setSelectedKeyId] = useState<string | null>(null);
   const client = props.selectedClient;
-
   const activeKey = selectedKeyId
     ? props.apiKeys.find(k => k.id === selectedKeyId) ?? props.apiKeys[0]
     : props.apiKeys[0];
 
+  let tlsVerifyStr = '';
+  if (client === 'podman' && isInsecure) {
+    tlsVerifyStr = '--tls-verify=false'
+  }
+
   const regUsername = 'bin2';
   const password = activeKey?.secretKey ?? '';
-  const cliLoginCommand = `${client} login ${tlsVerify} ${registryAddr} -u ${regUsername} -p ${password}`;
+  const cliLoginCommand = `${client} login ${tlsVerifyStr} ${addr} -u ${regUsername} -p ${password}`;
   const pullSecretName = `${props.name}-pull-secret`;
   const pullSecretYaml = buildPullSecretYaml({
     name: pullSecretName,
@@ -55,7 +59,7 @@ export default function Commands(props: CommandProps) {
         <span className="text-sm opacity-60">No API keys — create one to log in.</span>
       )}
       <div className={`flex ${client === 'k8s' ? 'items-start' : 'items-center'}`}>
-        <ClientSelect value={client} onChange={props.onSelectedClientChange} />
+        <ClientSelect value={client} onChange={props.selectedClientChangeAction} />
         {client === 'k8s' ? (
           <>
             <pre className="text-xs">
@@ -65,7 +69,7 @@ export default function Commands(props: CommandProps) {
           </>
         ) : (
           <>
-            <span>login {tlsVerify} {registryAddr} -u {regUsername} -p {activeKey ? '••••' : '—'}</span>
+            <span>login {tlsVerifyStr} {addr} -u {regUsername} -p {activeKey ? '••••' : '—'}</span>
             {activeKey && <ClipboardCopy copyText={cliLoginCommand} />}
           </>
         )}

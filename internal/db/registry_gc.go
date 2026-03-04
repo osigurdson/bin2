@@ -33,6 +33,20 @@ func (d *DB) UpsertRegistryBlob(ctx context.Context, digest string, sizeBytes in
 	return err
 }
 
+func (d *DB) GetRegistryBlobSize(ctx context.Context, digest string) (int64, error) {
+	const cmd = `SELECT size_bytes FROM blobs WHERE digest = $1`
+
+	var sizeBytes int64
+	err := d.conn.QueryRow(ctx, cmd, strings.TrimSpace(digest)).Scan(&sizeBytes)
+	if err != nil {
+		if isNoRows(err) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+	return sizeBytes, nil
+}
+
 func (d *DB) UpsertRegistryManifestIndex(ctx context.Context, args UpsertRegistryManifestIndexArgs) error {
 	repository := strings.TrimSpace(args.Repository)
 	manifestDigest := strings.TrimSpace(args.ManifestDigest)

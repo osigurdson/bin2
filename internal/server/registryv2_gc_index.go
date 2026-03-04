@@ -21,6 +21,26 @@ func (s *Server) trackRegistryBlobDigest(ctx context.Context, digest string, siz
 	return s.db.UpsertRegistryBlob(ctx, digest, sizeBytes)
 }
 
+func (s *Server) trackedRegistryBlobSize(ctx context.Context, digest string) (int64, bool, error) {
+	if s.db == nil {
+		return 0, false, nil
+	}
+
+	digest = strings.TrimSpace(digest)
+	if digest == "" {
+		return 0, false, nil
+	}
+
+	size, err := s.db.GetRegistryBlobSize(ctx, digest)
+	if errors.Is(err, db.ErrNotFound) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return size, true, nil
+}
+
 func (s *Server) indexRegistryManifest(
 	ctx context.Context,
 	registryID uuid.UUID,

@@ -32,7 +32,7 @@ export default function RegistryView({ registryId }: { registryId: string }) {
           name={registry.name}
           apiKeys={registryKeys}
           selectedClient={selectedClient}
-          onSelectedClientChange={setSelectedClient}
+          selectedClientChangeAction={setSelectedClient}
         />
         <Repositories registryId={registry.id} registryName={registry.name} selectedClient={selectedClient} />
       </div>
