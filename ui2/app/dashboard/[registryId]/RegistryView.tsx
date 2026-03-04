@@ -22,22 +22,20 @@ export default function RegistryView({ registryId }: { registryId: string }) {
   ) ?? [];
 
   return (
-    <>
-      <div className="space-y-6">
-        <div className="mb-4">
-          <span>Registry: <b>bin2.io/{registry.name}</b> <RegistrySizeDisplay sizeBytes={registry.sizeBytes} /></span>
-        </div>
-        <Commands
-          id={registry.id}
-          name={registry.name}
-          apiKeys={registryKeys}
-          selectedClient={selectedClient}
-          selectedClientChangeAction={setSelectedClient}
-        />
-        <Repositories registryId={registry.id} registryName={registry.name} selectedClient={selectedClient} />
+    <div className="space-y-6">
+      <div className="mb-4">
+        <span>Registry: <b>bin2.io/{registry.name}</b> <RegistrySizeDisplay sizeBytes={registry.sizeBytes} /></span>
       </div>
-    </>
-  )
+      <Commands
+        id={registry.id}
+        name={registry.name}
+        apiKeys={registryKeys}
+        selectedClient={selectedClient}
+        selectedClientChangeAction={setSelectedClient}
+      />
+      <Repositories registryId={registry.id} registryName={registry.name} selectedClient={selectedClient} />
+    </div>
+  );
 }
 
 function RegistrySizeDisplay({ sizeBytes }: { sizeBytes: number }) {
@@ -45,5 +43,5 @@ function RegistrySizeDisplay({ sizeBytes }: { sizeBytes: number }) {
     return null;
   }
 
-  return (<span>({formatBytes(sizeBytes)})</span>)
+  return <span>({formatBytes(sizeBytes)})</span>;
 }

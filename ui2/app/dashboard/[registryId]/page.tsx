@@ -6,9 +6,5 @@ export default async function Page({
   params: Promise<{ registryId: string }>;
 }) {
   const { registryId } = await params;
-  return (
-    <div>
-      <RegistryView registryId={registryId} />
-    </div>
-  )
+  return <RegistryView registryId={registryId} />;
 }

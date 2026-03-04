@@ -82,7 +82,7 @@ export default function Dashboard() {
 
   if (registriesData.registries.length === 0) {
     return (
-      <div className="max-w-xl rounded-lg border border-base-300 bg-base-100 p-6">
+      <div className="w-full rounded-lg border border-base-300 bg-base-100 p-6">
         <h2 className="text-xl font-bold">Create your first registry</h2>
         <p className="mt-2 text-sm opacity-75">
           Add a registry to start pushing and pulling container images.
@@ -103,7 +103,7 @@ export default function Dashboard() {
     }
   }
   return (
-    <div className="flex flex-col max-w-xl">
+    <div className="flex flex-col w-full">
       <div className="flex items-center justify-between gap-3">
         <div>
           {registriesHeaderText}

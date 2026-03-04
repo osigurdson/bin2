@@ -44,9 +44,9 @@ export default function NewRegistry() {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center">
+    <div className="flex flex-col justify-center">
       <form
-        className="flex flex-col w-md"
+        className="flex flex-col w-full"
         onSubmit={(e) => {
           e.preventDefault();
           onSave();

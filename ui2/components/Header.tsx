@@ -29,7 +29,7 @@ export default function Header() {
               tabIndex={0}
               role="button"
               aria-label="Open account menu"
-              className="group -mt-px h-[30px] w-[30px] rounded-full border border-base-300 overflow-hidden transition-all duration-150 ease-out hover:-translate-y-px hover:border-base-content/20 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-base-300"
+              className="group mt-1 h-[30px] w-[30px] rounded-full border border-base-300 overflow-hidden transition-all duration-150 ease-out hover:-translate-y-px hover:border-base-content/20 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-base-300"
             >
               {user.profilePictureUrl ? (
                 <Image
@@ -52,7 +52,7 @@ export default function Header() {
             </div>
             <ul
               tabIndex={0}
-              className="dropdown-content menu z-20 mt-2 w-40 rounded-box border border-base-300 bg-base-100 p-2 shadow-sm"
+              className="dropdown-content menu z-20 mt-2 w-40 bg-base-100 p-2"
             >
               <li>
                 <button type="button" onClick={() => handleSignOut()}>Sign out</button>
