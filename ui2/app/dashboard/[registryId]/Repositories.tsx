@@ -7,6 +7,7 @@ import ConfirmModal from "@/components/ConfirmModal";
 import { RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { ClientType } from "./Commands";
+import { getRegistryInfo } from "@/lib/runenv";
 
 function formatTimeAgo(date: Date) {
   const diffMs = Date.now() - date.getTime();
@@ -32,24 +33,12 @@ type RepositoriesProps = {
 };
 
 export default function Repositories({ registryId, registryName, selectedClient }: RepositoriesProps) {
+  const { addr, isInsecure } = getRegistryInfo();
   const { data, isLoading, isError, refetch, isFetching } = useGetRepositories(registryId);
   const repos: Repository[] = data?.repositories ?? [];
   const [pendingDeleteRepo, setPendingDeleteRepo] = useState<Repository | null>(null);
   const [deletingRepositoryId, setDeletingRepositoryId] = useState<string | null>(null);
   const { mutate: deleteRepository, isPending: isDeletePending } = useDeleteRepository();
-  const registryAddr = 'localhost:5000';
-  const pushClient: Exclude<ClientType, 'k8s'> = selectedClient === 'k8s' ? 'docker' : selectedClient;
-  const pullClient: 'docker' | 'podman' = selectedClient === 'podman' ? 'podman' : 'docker';
-  const firstPullCommand = pullClient === 'podman'
-    ? 'podman pull docker.io/library/hello-world:latest'
-    : 'docker pull hello-world:latest';
-  const firstPushTag = `${registryAddr}/${registryName}/hello-world:latest`;
-  const firstPushCommand = pushClient === 'oras'
-    ? `oras push ${firstPushTag} ./README.md:text/plain`
-    : `${pushClient} push ${firstPushTag}`;
-  const firstTagCommand = pushClient === 'oras'
-    ? `oras tag ${firstPushTag} stable`
-    : `${pushClient} tag hello-world:latest ${firstPushTag}`;
   const isRefreshing = isFetching && !isLoading;
 
   const onRequestDeleteRepository = (repo: Repository) => {
@@ -86,6 +75,8 @@ export default function Repositories({ registryId, registryName, selectedClient 
     );
   };
 
+  const InstrComponent = instructions[selectedClient];
+
   if (isLoading) {
     return (
       <div className="p-2">
@@ -109,22 +100,7 @@ export default function Repositories({ registryId, registryName, selectedClient 
       <div className="p-2 space-y-3">
         <RepositoryHeader onRefresh={() => refetch()} isRefreshing={isRefreshing} />
         <div className="p-3">
-          <p>No repositories yet. Push your first image after running the login command above. Some example
-            tag and push commands below.</p>
-          <div className="flex items-center gap-2 mt-2">
-            <code className="">{firstPullCommand}</code>
-            <ClipboardCopy copyText={firstPullCommand} />
-          </div>
-          <div className="">
-            <div className="flex items-center gap-2">
-              <code className="">{firstTagCommand}</code>
-              <ClipboardCopy copyText={firstTagCommand} />
-            </div>
-            <div className="flex items-center gap-2">
-              <code className="">{firstPushCommand}</code>
-              <ClipboardCopy copyText={firstPushCommand} />
-            </div>
-          </div>
+          <InstrComponent addr={addr} registry={registryName} isInsecure={isInsecure} />
         </div>
         <ConfirmModal
           isOpen={!!pendingDeleteRepo}
@@ -198,6 +174,7 @@ export default function Repositories({ registryId, registryName, selectedClient 
   );
 }
 
+// Header 
 type RepositoryHeaderProps = {
   onRefresh: () => void;
   isRefreshing: boolean;
@@ -219,4 +196,116 @@ function RepositoryHeader({ onRefresh, isRefreshing }: RepositoryHeaderProps) {
       </button>
     </div>
   );
+}
+
+// Client specific instructions
+interface InstructionProps {
+  addr: string;
+  registry: string;
+  isInsecure: boolean;
+}
+
+type InstructionComponent = (props: InstructionProps) => React.ReactNode;
+
+function DockerInstruction({ addr, registry, isInsecure }: InstructionProps) {
+  const pullCmd = 'docker pull docker.io/library/hello-world:latest';
+  const imageUri = `${addr}/${registry}/hello-world:latest`;
+  const tagCmd = `docker tag docker.io/library/hello-world:latest ${imageUri}`;
+  const pushCmd = `docker push ${imageUri}`;
+
+  return (
+    <div>No repositories yet. Push your first image after running the login
+      command above. Some example tag and push commands below.
+
+      {isInsecure && (
+        <div className="text-warning opacity-70 mt-2">
+          Note: Docker needs this registry configured as an insecure registry in daemon settings.
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 mt-2">
+        <code>{pullCmd}</code>
+        <ClipboardCopy copyText={pullCmd} />
+      </div>
+      <div className="flex items-center gap-2">
+        <code>{tagCmd}</code>
+        <ClipboardCopy copyText={tagCmd} />
+      </div>
+      <div className="flex items-center gap-2">
+        <code>{pushCmd}</code>
+        <ClipboardCopy copyText={pushCmd} />
+      </div>
+    </div>
+  );
+}
+
+function PodmanInstruction({ addr, registry, isInsecure }: InstructionProps) {
+  const pullCmd = 'podman pull docker.io/library/hello-world:latest';
+  const imageUri = `${addr}/${registry}/hello-world:latest`;
+  const tagCmd = `podman tag docker.io/library/hello-world:latest ${imageUri}`;
+  const tlsVerify = isInsecure ? '--tls-verify=false' : '';
+  const pushCmd = `podman push ${tlsVerify} ${imageUri}`;
+
+  return (
+    <div>No repositories yet. Push your first image after running the login
+      command above. Some example tag and push commands below.
+
+      <div className="flex items-center gap-2 mt-2">
+        <code className="">{pullCmd}</code>
+        <ClipboardCopy copyText={pullCmd} />
+      </div>
+      <div className="">
+        <div className="flex items-center gap-2">
+          <code className="">{tagCmd}</code>
+          <ClipboardCopy copyText={tagCmd} />
+        </div>
+        <div className="flex items-center gap-2">
+          <code className="">{pushCmd}</code>
+          <ClipboardCopy copyText={pushCmd} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OrasInstruction({ addr, registry, isInsecure }: InstructionProps) {
+  const artifactUri = `${addr}/${registry}/hello-artifact:v1`;
+  const plainHttp = isInsecure ? '--plain-http ' : '';
+  const createArtifactFileCmd = "echo 'hello from oras' > hello.txt";
+  const pushCmd = `oras push ${plainHttp}${artifactUri} ./hello.txt:text/plain`;
+  const pullCmd = `oras pull ${plainHttp}${artifactUri}`;
+
+  return (
+    <div>No repositories yet. Push your first OCI artifact after running the
+      login command above. Some example push and pull commands below.
+
+      <div className="flex items-center gap-2 mt-2">
+        <code>{createArtifactFileCmd}</code>
+        <ClipboardCopy copyText={createArtifactFileCmd} />
+      </div>
+      <div className="flex items-center gap-2">
+        <code>{pushCmd}</code>
+        <ClipboardCopy copyText={pushCmd} />
+      </div>
+      <div className="flex items-center gap-2">
+        <code>{pullCmd}</code>
+        <ClipboardCopy copyText={pullCmd} />
+      </div>
+    </div>
+  );
+}
+
+function K8Instruction() {
+  return (
+    <div>No repositories yet. First push an image using docker or podman. Then
+      create a pull secret in your cluster as shown above.
+    </div>
+  );
+}
+
+const instructions: Record<ClientType, InstructionComponent> = {
+  docker: DockerInstruction,
+  podman: PodmanInstruction,
+  oras: OrasInstruction,
+  k8s: K8Instruction,
 }
