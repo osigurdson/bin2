@@ -84,6 +84,20 @@ func (s *Server) finalizeBlobUploadHandler(c *gin.Context, repo, uuid string) {
 		return
 	}
 
+	// Docker clients may send the final blob chunk in the same PUT request that
+	// includes the digest query parameter. Append that body before hashing.
+	body := c.Request.Body
+	if body == nil {
+		body = http.NoBody
+	}
+	if _, err := s.registryStorage.AppendUpload(c.Request.Context(), uuid, body); errors.Is(err, ErrUploadNotFound) {
+		writeOCIError(c, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "upload not found")
+		return
+	} else if err != nil {
+		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to append upload")
+		return
+	}
+
 	computedHex, err := s.registryStorage.UploadSHA256(c.Request.Context(), uuid)
 	if errors.Is(err, ErrUploadNotFound) {
 		writeOCIError(c, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "upload not found")
