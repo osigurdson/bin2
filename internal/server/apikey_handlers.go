@@ -233,11 +233,7 @@ func (s *Server) resolveCreateAPIKeyScopes(c *gin.Context, u user, rawScopes []c
 			return nil, err
 		}
 
-		isMember, err := s.db.IsOrgMember(c.Request.Context(), registryRec.OrgID, u.id)
-		if err != nil {
-			return nil, err
-		}
-		if !isMember {
+		if registryRec.TenantID != u.tenantID {
 			return nil, errUnauthorized
 		}
 

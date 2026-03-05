@@ -1,47 +1,37 @@
 -- extensions
 CREATE EXTENSION citext;
 
+-- tenants
+CREATE TABLE tenants (
+  id UUID PRIMARY KEY,
+  name TEXT NOT NULL,
+  onboarded BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE UNIQUE INDEX unique_tenants_name ON tenants(name);
+
 -- users
 CREATE TABLE users (
   id UUID PRIMARY KEY,
-  sub TEXT NOT NULL,
-  email citext NOT NULL,
-  onboarded BOOLEAN NOT NULL DEFAULT FALSE
+  tenant_id UUID NOT NULL 
+    REFERENCES tenants(id),
+  sub TEXT NOT NULL
 );
 CREATE UNIQUE INDEX unique_users_sub ON users(sub);
-CREATE UNIQUE INDEX unique_users_email ON users(email);
-
--- organizations
-CREATE TABLE organizations (
-  id UUID PRIMARY KEY,
-  workos_org_id TEXT UNIQUE,        -- NULL for personal orgs
-  slug TEXT NOT NULL UNIQUE,
-  name TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE org_members (
-  org_id  UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  role    TEXT NOT NULL DEFAULT 'member',   -- 'owner' | 'member'
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  PRIMARY KEY (org_id, user_id)
-);
-CREATE INDEX idx_org_members_user_id ON org_members (user_id);
-
 
 -- registries
 CREATE TABLE registries (
   id UUID PRIMARY KEY,
-  org_id UUID NOT NULL
-    REFERENCES organizations(id) ON DELETE CASCADE,
+  tenant_id UUID NOT NULL
+    REFERENCES tenants(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   cached_size_bytes BIGINT NOT NULL DEFAULT 0 CHECK (cached_size_bytes >= 0),
   cached_size_updated_at TIMESTAMPTZ
 );
-CREATE UNIQUE INDEX unique_registry_nam ON registries (name);
-CREATE INDEX idx_registry_org_id ON registries (org_id);
+CREATE UNIQUE INDEX unique_registry_name ON registries (name);
+CREATE INDEX idx_registry_tenant_id ON registries (tenant_id);
 
+-- repositories
 CREATE TABLE repositories (
   id UUID PRIMARY KEY,
   registry_id UUID NOT NULL

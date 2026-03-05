@@ -85,6 +85,11 @@ func runInit(ctx context.Context, destructive bool) error {
 		log.Printf("database %s already exists; skipping create", cfg.Database)
 	}
 
+	if destructive {
+		log.Println("Deleting R2 data")
+		runR2Clean(ctx)
+	}
+
 	log.Println("running migrations")
 	if err := db.RunMigrations(ctx, cfg); err != nil {
 		return fmt.Errorf("could not run migrations: %w", err)

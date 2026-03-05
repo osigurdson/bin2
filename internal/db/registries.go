@@ -9,7 +9,7 @@ import (
 
 type Registry struct {
 	ID                  uuid.UUID
-	OrgID               uuid.UUID
+	TenantID            uuid.UUID
 	Name                string
 	CachedSizeBytes     int64
 	CachedSizeUpdatedAt *time.Time
@@ -22,14 +22,14 @@ type AddRegistryArgs struct {
 
 func (d *DB) AddRegistry(ctx context.Context, args AddRegistryArgs) (Registry, error) {
 	registry := Registry{
-		ID:    uuid.New(),
-		OrgID: args.OrgID,
-		Name:  args.Name,
+		ID:       uuid.New(),
+		TenantID: args.OrgID,
+		Name:     args.Name,
 	}
 
-	const cmd = `INSERT INTO registries (id, org_id, name)
+	const cmd = `INSERT INTO registries (id, tenant_id, name)
 		VALUES ($1, $2, $3)`
-	if _, err := d.conn.Exec(ctx, cmd, registry.ID, registry.OrgID, registry.Name); err != nil {
+	if _, err := d.conn.Exec(ctx, cmd, registry.ID, registry.TenantID, registry.Name); err != nil {
 		if isUniqueViolation(err) {
 			return Registry{}, ErrConflict
 		}
@@ -63,12 +63,12 @@ func (d *DB) AddRegistryWithKey(ctx context.Context, args AddRegistryWithKeyArgs
 	defer tx.Rollback(ctx)
 
 	registry := Registry{
-		ID:    uuid.New(),
-		OrgID: args.OrgID,
-		Name:  args.Name,
+		ID:       uuid.New(),
+		TenantID: args.OrgID,
+		Name:     args.Name,
 	}
-	const insertRegistryCmd = `INSERT INTO registries (id, org_id, name) VALUES ($1, $2, $3)`
-	if _, err := tx.Exec(ctx, insertRegistryCmd, registry.ID, registry.OrgID, registry.Name); err != nil {
+	const insertRegistryCmd = `INSERT INTO registries (id, tenant_id, name) VALUES ($1, $2, $3)`
+	if _, err := tx.Exec(ctx, insertRegistryCmd, registry.ID, registry.TenantID, registry.Name); err != nil {
 		if isUniqueViolation(err) {
 			return AddRegistryWithKeyResult{}, ErrConflict
 		}
@@ -115,9 +115,9 @@ func (d *DB) AddRegistryWithKey(ctx context.Context, args AddRegistryWithKeyArgs
 }
 
 func (d *DB) ListRegistriesByOrg(ctx context.Context, orgID uuid.UUID) ([]Registry, error) {
-	const cmd = `SELECT id, org_id, name, cached_size_bytes, cached_size_updated_at
+	const cmd = `SELECT id, tenant_id, name, cached_size_bytes, cached_size_updated_at
 		FROM registries
-		WHERE org_id = $1
+		WHERE tenant_id = $1
 		ORDER BY name ASC`
 	rows, err := d.conn.Query(ctx, cmd, orgID)
 	if err != nil {
@@ -130,7 +130,7 @@ func (d *DB) ListRegistriesByOrg(ctx context.Context, orgID uuid.UUID) ([]Regist
 		var registry Registry
 		if err := rows.Scan(
 			&registry.ID,
-			&registry.OrgID,
+			&registry.TenantID,
 			&registry.Name,
 			&registry.CachedSizeBytes,
 			&registry.CachedSizeUpdatedAt,
@@ -146,13 +146,13 @@ func (d *DB) ListRegistriesByOrg(ctx context.Context, orgID uuid.UUID) ([]Regist
 }
 
 func (d *DB) GetRegistryByID(ctx context.Context, id uuid.UUID) (Registry, error) {
-	const cmd = `SELECT id, org_id, name, cached_size_bytes, cached_size_updated_at
+	const cmd = `SELECT id, tenant_id, name, cached_size_bytes, cached_size_updated_at
 		FROM registries
 		WHERE id = $1`
 	var registry Registry
 	err := d.conn.QueryRow(ctx, cmd, id).Scan(
 		&registry.ID,
-		&registry.OrgID,
+		&registry.TenantID,
 		&registry.Name,
 		&registry.CachedSizeBytes,
 		&registry.CachedSizeUpdatedAt,
@@ -167,13 +167,13 @@ func (d *DB) GetRegistryByID(ctx context.Context, id uuid.UUID) (Registry, error
 }
 
 func (d *DB) GetRegistryByName(ctx context.Context, name string) (Registry, error) {
-	const cmd = `SELECT id, org_id, name, cached_size_bytes, cached_size_updated_at
+	const cmd = `SELECT id, tenant_id, name, cached_size_bytes, cached_size_updated_at
 		FROM registries
 		WHERE name = $1`
 	var registry Registry
 	err := d.conn.QueryRow(ctx, cmd, name).Scan(
 		&registry.ID,
-		&registry.OrgID,
+		&registry.TenantID,
 		&registry.Name,
 		&registry.CachedSizeBytes,
 		&registry.CachedSizeUpdatedAt,
@@ -188,7 +188,7 @@ func (d *DB) GetRegistryByName(ctx context.Context, name string) (Registry, erro
 }
 
 func (d *DB) DeleteRegistryByIDAndOrg(ctx context.Context, id, orgID uuid.UUID) error {
-	const cmd = `DELETE FROM registries WHERE id = $1 AND org_id = $2`
+	const cmd = `DELETE FROM registries WHERE id = $1 AND tenant_id = $2`
 	tag, err := d.conn.Exec(ctx, cmd, id, orgID)
 	if err != nil {
 		return err

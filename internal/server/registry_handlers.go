@@ -64,7 +64,7 @@ func (s *Server) listRegistriesHandler(c *gin.Context) {
 		return
 	}
 
-	registries, err := s.db.ListRegistriesByOrg(c.Request.Context(), u.orgID)
+	registries, err := s.db.ListRegistriesByOrg(c.Request.Context(), u.tenantID)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return
@@ -115,7 +115,7 @@ func (s *Server) getRegistryByIDHandler(c *gin.Context) {
 		return
 	}
 
-	if registry.OrgID != u.orgID {
+	if registry.TenantID != u.tenantID {
 		c.JSON(http.StatusNotFound, gin.H{"error": "registry not found"})
 		return
 	}
@@ -173,7 +173,7 @@ func (s *Server) listRepositoriesHandler(c *gin.Context) {
 		return
 	}
 
-	if registry.OrgID != u.orgID {
+	if registry.TenantID != u.tenantID {
 		c.JSON(http.StatusNotFound, gin.H{"error": "registry not found"})
 		return
 	}
@@ -241,7 +241,7 @@ func (s *Server) removeRepositoryHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get registry"})
 		return
 	}
-	if registry.OrgID != u.orgID {
+	if registry.TenantID != u.tenantID {
 		c.JSON(http.StatusNotFound, gin.H{"error": "registry not found"})
 		return
 	}
@@ -315,7 +315,7 @@ func (s *Server) addRegistryHandler(c *gin.Context) {
 	}
 
 	result, err := s.db.AddRegistryWithKey(c.Request.Context(), db.AddRegistryWithKeyArgs{
-		OrgID:           u.orgID,
+		OrgID:           u.tenantID,
 		Name:            req.Name,
 		UserID:          u.id,
 		KeyName:         fmt.Sprintf("default-%s-%s", req.Name, prefix),
@@ -362,7 +362,7 @@ func (s *Server) removeRegistryHandler(c *gin.Context) {
 		return
 	}
 
-	if err := s.db.DeleteRegistryByIDAndOrg(c.Request.Context(), id, u.orgID); err != nil {
+	if err := s.db.DeleteRegistryByIDAndOrg(c.Request.Context(), id, u.tenantID); err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "registry not found"})
 			return

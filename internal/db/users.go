@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/uuid"
 )
@@ -9,94 +10,45 @@ import (
 type User struct {
 	ID        uuid.UUID
 	Sub       string
-	Email     string
+	TenantID  uuid.UUID
 	Onboarded bool
 }
 
-func (d *DB) EnsureUser(ctx context.Context, sub, email string) (User, error) {
-	user, err := d.GetUserBySub(ctx, sub)
-	if err == nil {
-		// Keep email in sync when Clerk-provided email changes.
-		if email != "" && user.Email != email {
-			const cmd = `UPDATE users SET email = $1 WHERE id = $2`
-			if _, updateErr := d.conn.Exec(ctx, cmd, email, user.ID); updateErr == nil {
-				user.Email = email
-			}
-		}
-		return user, nil
-	}
-	if err != ErrNotFound {
-		return User{}, err
-	}
-	if email == "" {
-		return User{}, ErrNotFound
+func (d *DB) GetOrCreateUser(
+	ctx context.Context,
+	sub string,
+	org string,
+) (User, error) {
+	if sub == "" {
+		return User{}, fmt.Errorf("sub not specified")
 	}
 
-	newUser := User{
-		ID:    uuid.New(),
-		Sub:   sub,
-		Email: email,
+	tenantName := org
+	if tenantName == "" {
+		tenantName = "personal__" + sub
 	}
 
-	const cmd = `INSERT INTO users (id, sub, email)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (sub) DO UPDATE SET email = EXCLUDED.email
-		RETURNING id, sub, email, onboarded`
-	if err := d.conn.QueryRow(ctx, cmd, newUser.ID, newUser.Sub, newUser.Email).
-		Scan(&newUser.ID, &newUser.Sub, &newUser.Email, &newUser.Onboarded); err != nil {
-		if isUniqueViolation(err) {
-			return User{}, ErrConflict
-		}
-		return User{}, err
-	}
-
-	return newUser, nil
-}
-
-func (d *DB) GetUserBySub(ctx context.Context, sub string) (User, error) {
-	const cmd = `SELECT id, sub, email, onboarded FROM users WHERE sub = $1`
 	var user User
-	if err := d.conn.QueryRow(ctx, cmd, sub).Scan(&user.ID, &user.Sub, &user.Email, &user.Onboarded); err != nil {
-		if isNoRows(err) {
-			return User{}, ErrNotFound
-		}
-		return User{}, err
-	}
-	return user, nil
-}
-
-func (d *DB) GetUserByEmail(ctx context.Context, email string) (User, error) {
-	const cmd = `SELECT id, sub, email, onboarded FROM users WHERE email = $1`
-	var user User
-	if err := d.conn.QueryRow(ctx, cmd, email).Scan(&user.ID, &user.Sub, &user.Email, &user.Onboarded); err != nil {
-		if isNoRows(err) {
-			return User{}, ErrNotFound
-		}
-		return User{}, err
-	}
-	return user, nil
-}
-
-func (d *DB) UpdateUserSub(ctx context.Context, userID uuid.UUID, sub string) (User, error) {
-	const cmd = `UPDATE users
-		SET sub = $1
-		WHERE id = $2
-		RETURNING id, sub, email, onboarded`
-	var user User
-	if err := d.conn.QueryRow(ctx, cmd, sub, userID).Scan(&user.ID, &user.Sub, &user.Email, &user.Onboarded); err != nil {
-		if isNoRows(err) {
-			return User{}, ErrNotFound
-		}
-		if isUniqueViolation(err) {
-			return User{}, ErrConflict
-		}
-		return User{}, err
+	err := d.conn.QueryRow(ctx, `
+		WITH t AS (
+			INSERT INTO tenants (id, name)
+			VALUES (gen_random_uuid(), $1)
+			ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+			RETURNING id, onboarded
+		)
+		INSERT INTO users (id, tenant_id, sub)
+		VALUES (gen_random_uuid(), (SELECT id FROM t), $2)
+		ON CONFLICT (sub) DO UPDATE SET tenant_id = (SELECT id FROM t)
+		RETURNING id, tenant_id, sub, (SELECT onboarded FROM t)
+	`, tenantName, sub).Scan(&user.ID, &user.TenantID, &user.Sub, &user.Onboarded)
+	if err != nil {
+		return user, err
 	}
 	return user, nil
 }
 
 func (d *DB) SetUserOnboarded(ctx context.Context, userID uuid.UUID, onboarded bool) error {
-	const cmd = `UPDATE users SET onboarded = $1 WHERE id = $2`
+	const cmd = `UPDATE tenants SET onboarded = $1 WHERE id = (SELECT tenant_id FROM users where id = $2)`
 	tag, err := d.conn.Exec(ctx, cmd, onboarded, userID)
 	if err != nil {
 		return err
