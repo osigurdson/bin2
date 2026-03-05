@@ -47,3 +47,5 @@ pull/.env
 
 # Local registry storage
 registry-data/
+
+.pushcount
