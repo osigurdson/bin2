@@ -1,10 +1,14 @@
-import { clerkMiddleware } from "@clerk/nextjs/server";
+import { authkitMiddleware } from '@workos-inc/authkit-nextjs';
+import { type NextRequest, NextResponse, type NextFetchEvent } from 'next/server';
 
-export default clerkMiddleware();
+export default function middleware(request: NextRequest, event: NextFetchEvent) {
+  // WorkOS redirects to /dashboard?code=... — rewrite internally to the auth handler
+  if (request.nextUrl.pathname === '/dashboard' && request.nextUrl.searchParams.has('code')) {
+    const url = request.nextUrl.clone();
+    url.pathname = '/auth/callback';
+    return NextResponse.rewrite(url);
+  }
+  return authkitMiddleware()(request, event);
+}
 
-export const config = {
-  matcher: [
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
-    "/(api|trpc)(.*)",
-  ],
-};
+export const config = { matcher: ['/((?!_next|.*\\..*).*)'] };

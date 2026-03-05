@@ -1,32 +1,38 @@
 import type { Metadata } from "next";
-import { ClerkProvider } from "@clerk/nextjs";
-import "./tailwind.css";
-import "./root.css";
-import "./marketing.css";
-import "./dashboard.css";
+import { Space_Mono } from "next/font/google";
+import { AuthKitProvider } from "@workos-inc/authkit-nextjs/components";
+import { withAuth } from "@workos-inc/authkit-nextjs";
+import "./globals.css";
+
+const spaceMono = Space_Mono({
+  subsets: ["latin"],
+  weight: ["400", "700"],
+  variable: "--font-space-mono",
+});
+
 
 export const metadata: Metadata = {
-  title: "bin2 - Container Registry",
-  description: "the ridiculously cheap, fast and simple container registry",
+  title: 'bin2',
+  description: 'Cheap / fast container registry',
   icons: {
-    icon: "/favicon.svg",
+    icon: '/favicon.svg',
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const { accessToken: _accessToken, ...auth } = await withAuth();
+
   return (
-    <ClerkProvider
-      signInForceRedirectUrl="/dashboard"
-      signUpForceRedirectUrl="/dashboard"
-      afterSignOutUrl="/"
-    >
-      <html lang="en">
-        <body>{children}</body>
-      </html>
-    </ClerkProvider>
+    <html lang="en" className={`${spaceMono.className} ${spaceMono.variable}`} data-theme="light">
+      <body>
+        <AuthKitProvider initialAuth={auth}>
+          {children}
+        </AuthKitProvider>
+      </body>
+    </html>
   );
 }

@@ -1,56 +1,49 @@
 import Link from "next/link";
-import { getSignInUrl, withAuth } from "@workos-inc/authkit-nextjs";
-import styles from "./page.module.css";
+import { SignedIn, SignedOut, SignInButton } from "@clerk/nextjs";
 
-export default async function Home() {
-  const { user } = await withAuth();
-  const signInUrl = await getSignInUrl();
-
+export default function Home() {
   return (
-    <div className={styles.container}>
-      <div className={styles.aboveFold}>
-        <header className={styles.header}>
-          <Link className={styles.logo} href="/">
+    <div className="container">
+      <div className="above-fold">
+        <header>
+          <Link className="logo" href="/">
             bin<sub>2</sub>
           </Link>
-          <nav className={styles.nav}>
-            <a href="#pricing" className={styles.navLink}>
-              pricing
-            </a>
-            <Link href="/docs" className={styles.navLink}>
-              docs
-            </Link>
-            {user ? (
-              <Link href="/dashboard" className={styles.btn}>
+          <nav>
+            <a href="#pricing">pricing</a>
+            <Link href="/docs">docs</Link>
+            <SignedOut>
+              <SignInButton mode="modal" forceRedirectUrl="/dashboard">
+                <button className="btn">login</button>
+              </SignInButton>
+            </SignedOut>
+            <SignedIn>
+              <Link href="/dashboard" className="btn">
                 dashboard
               </Link>
-            ) : (
-              <a href={signInUrl} className={styles.btn}>
-                login
-              </a>
-            )}
+            </SignedIn>
           </nav>
         </header>
 
-        <div className={styles.hero}>
+        <div className="hero">
           <h1>
             bin<sub>2</sub>
           </h1>
-          <p className={styles.tagline}>
+          <p className="tagline">
             the ridiculously cheap, fast and simple container registry
           </p>
-          <a href="#pricing" className={styles.cta}>
+          <a href="#pricing" className="cta">
             see pricing
           </a>
         </div>
       </div>
 
-      <section id="pricing" className={styles.section}>
-        <h2 className={styles.sectionTitle}>Pricing</h2>
-        <div className={styles.tiers}>
-          <div className={styles.tier}>
+      <section id="pricing">
+        <h2>Pricing</h2>
+        <div className="tiers">
+          <div className="tier">
             <h3>Free</h3>
-            <div className={styles.price}>
+            <div className="price">
               $0<span>/mo</span>
             </div>
             <ul>
@@ -60,9 +53,9 @@ export default async function Home() {
             </ul>
           </div>
 
-          <div className={styles.tier}>
+          <div className="tier">
             <h3>Starter</h3>
-            <div className={styles.price}>
+            <div className="price">
               $5<span>/mo</span>
             </div>
             <ul>
@@ -72,9 +65,9 @@ export default async function Home() {
             </ul>
           </div>
 
-          <div className={styles.tier}>
+          <div className="tier">
             <h3>Enterprise</h3>
-            <div className={styles.price}>Call</div>
+            <div className="price">Call</div>
             <ul>
               <li>Unlimited storage</li>
               <li>Unlimited pulls</li>
@@ -85,16 +78,14 @@ export default async function Home() {
         </div>
       </section>
 
-      <section id="pricing-explainer" className={styles.section}>
-        <h2 className={styles.sectionTitle}>
-          Why is it the cheapest and the fastest?
-        </h2>
-        <p className={styles.subtitle}>
+      <section id="pricing-explainer">
+        <h2>Why is it the cheapest and the fastest?</h2>
+        <p className="subtitle">
           Container storage ought to be a commodity. We treat it that way and
           remove the expensive parts of the pipeline and leverage Cloudflare&apos;s
           global CDN for incredible speed.
         </p>
-        <div className={styles.explainer}>
+        <div className="explainer">
           <div>
             <h3>Direct to R2</h3>
             <p>
@@ -132,7 +123,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <footer className={styles.footer}>
+      <footer>
         <p>
           bin2 &copy; 2025 &middot; <a href="#">terms</a> &middot;{" "}
           <a href="#">privacy</a>
