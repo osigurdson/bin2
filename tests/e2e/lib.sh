@@ -98,6 +98,17 @@ e2e_pull_digest_ref() {
 }
 
 
+e2e_resolve_location() {
+  local base_url="$1"
+  local location="$2"
+  if [[ "$location" == http://* || "$location" == https://* ]]; then
+    printf '%s' "$location"
+    return
+  fi
+  printf '%s%s' "$base_url" "$location"
+}
+
+
 e2e_unique_repo() {
   local prefix="$1"
   prefix="${prefix//[^A-Za-z0-9._-]/-}"

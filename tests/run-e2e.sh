@@ -5,10 +5,12 @@ readonly TEST_ROOT="$(cd "$(dirname "$0")/e2e" && pwd)"
 
 default_tests=(
   auth_handshake
+  blob_upload_protocol
   image_interop_roundtrip
   oras_artifact_roundtrip
   scope_denial
   index_manifest_validation
+  pull_negative_paths
 )
 
 if [[ "$#" -gt 0 ]]; then

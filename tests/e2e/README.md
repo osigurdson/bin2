@@ -7,10 +7,12 @@ They assume a pre-existing registry namespace plus at least one write-capable AP
 
 - `lib.sh`: shared helpers for registry URLs, token exchange, and API-key setup.
 - `auth_handshake.sh`: bearer challenge and token exchange smoke test.
+- `blob_upload_protocol.sh`: direct upload protocol coverage for `POST`, `PATCH`, and `PUT`.
 - `image_interop_roundtrip.sh`: Docker push, Podman pull/re-push, Docker digest pull.
 - `oras_artifact_roundtrip.sh`: ORAS push and pull of a small file artifact.
 - `scope_denial.sh`: a pull-only token can pull but cannot start uploads.
 - `index_manifest_validation.sh`: valid OCI index is accepted; missing-child index is rejected.
+- `pull_negative_paths.sh`: negative pull-host coverage for missing manifests and blobs.
 - `../run-e2e.sh`: suite entrypoint.
 
 ## Required Environment
@@ -35,14 +37,16 @@ Plain shell variables shown by `set` are not enough for `./tests/run-e2e.sh`.
 Per script:
 
 - `auth_handshake.sh`: `curl`, `jq`, `base64`
+- `blob_upload_protocol.sh`: `curl`, `jq`, `sha256sum`
 - `image_interop_roundtrip.sh`: `curl`, `jq`, `docker`, `podman`
 - `oras_artifact_roundtrip.sh`: `oras`
 - `scope_denial.sh`: `curl`, `jq`, `oras`, `base64`
 - `index_manifest_validation.sh`: `curl`, `jq`, `oras`
+- `pull_negative_paths.sh`: `curl`, `jq`
 
 ## Examples
 
-Run the full suite against a single local HTTP registry:
+Run the full suite against the configured registry endpoints:
 
 ```bash
 export E2E_NAMESPACE=nthesis
@@ -56,6 +60,14 @@ Run only the ORAS and index tests:
 E2E_NAMESPACE=nthesis \
 E2E_PASSWORD=... \
 ./tests/run-e2e.sh oras_artifact_roundtrip index_manifest_validation
+```
+
+Run only the direct HTTP protocol tests:
+
+```bash
+E2E_NAMESPACE=nthesis \
+E2E_PASSWORD=... \
+./tests/run-e2e.sh auth_handshake blob_upload_protocol pull_negative_paths
 ```
 
 ## Notes
