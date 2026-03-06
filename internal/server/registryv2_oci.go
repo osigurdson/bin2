@@ -8,6 +8,11 @@ import (
 )
 
 func writeOCIError(c *gin.Context, status int, code, message string) {
+	if c.Request.Method == http.MethodHead {
+		c.Header("Content-Type", "application/json; charset=utf-8")
+		c.Status(status)
+		return
+	}
 	c.JSON(status, ociErrorResponse{
 		Errors: []ociError{
 			{Code: code, Message: message},

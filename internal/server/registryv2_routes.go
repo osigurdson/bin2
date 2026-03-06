@@ -20,7 +20,7 @@ func (s *Server) addRegistryRoutes() {
 }
 
 func (s *Server) v2RootHandler(c *gin.Context) {
-	if c.Request.Method == http.MethodGet {
+	if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead {
 		c.Status(http.StatusOK)
 		return
 	}
