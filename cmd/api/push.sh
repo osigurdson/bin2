@@ -25,8 +25,10 @@ fi
 podman login https://lax.vultrcr.com/bin2 -u "$VULTR_CR_USERNAME" -p "$VULTR_CR_PASSWORD"
 
 go build .
-podman build -t api:"$tag" .
+echo "building localhost/api:$tag"
+podman build --quiet -t api:"$tag" .
 podman tag api:"$tag" lax.vultrcr.com/bin2/api:"$tag"
+echo "pushing lax.vultrcr.com/bin2/api:$tag"
 podman push lax.vultrcr.com/bin2/api:"$tag"
 
 echo $((tag + 1)) > "$count_file"

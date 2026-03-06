@@ -42,9 +42,19 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 		return
 	}
 
-	blobDigests := extractManifestBlobDigests(manifest)
-	if len(blobDigests) == 0 {
+	blobDigests, childManifestDigests := extractManifestReferences(manifest)
+	if len(blobDigests) == 0 && len(childManifestDigests) == 0 {
 		writeOCIError(c, http.StatusBadRequest, "MANIFEST_INVALID", "manifest must reference config/layer blobs")
+		return
+	}
+
+	registryID, err := s.resolveRegistryIDForRepo(c.Request.Context(), auth, repo)
+	if err != nil {
+		if errors.Is(err, errUnauthorized) {
+			writeOCIError(c, http.StatusForbidden, "DENIED", "access denied to this repository")
+			return
+		}
+		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to resolve registry")
 		return
 	}
 
@@ -83,17 +93,35 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 		}
 	}
 
-	sum := sha256.Sum256(manifestBytes)
-	manifestDigest := "sha256:" + hex.EncodeToString(sum[:])
-	registryID, err := s.resolveRegistryIDForRepo(c.Request.Context(), auth, repo)
-	if err != nil {
-		if errors.Is(err, errUnauthorized) {
-			writeOCIError(c, http.StatusForbidden, "DENIED", "access denied to this repository")
+	seenManifestDigests := make(map[string]struct{}, len(childManifestDigests))
+	for _, childManifestDigest := range childManifestDigests {
+		if s.db == nil {
+			writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "manifest index unavailable")
 			return
 		}
-		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to resolve registry")
-		return
+		digestHex, err := parseDigest(childManifestDigest)
+		if err != nil {
+			writeOCIError(c, http.StatusBadRequest, "MANIFEST_INVALID", "manifest references invalid digest")
+			return
+		}
+		normalizedDigest := "sha256:" + digestHex
+		if _, ok := seenManifestDigests[normalizedDigest]; ok {
+			continue
+		}
+		exists, err := s.db.HasManifestDigestInRepository(c.Request.Context(), registryID, repoLeaf(repo), normalizedDigest)
+		if err != nil {
+			writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to validate referenced manifest")
+			return
+		}
+		if !exists {
+			writeOCIError(c, http.StatusBadRequest, "MANIFEST_BLOB_UNKNOWN", "referenced manifest not found")
+			return
+		}
+		seenManifestDigests[normalizedDigest] = struct{}{}
 	}
+
+	sum := sha256.Sum256(manifestBytes)
+	manifestDigest := "sha256:" + hex.EncodeToString(sum[:])
 
 	contentType := manifestContentType(c.GetHeader("Content-Type"))
 	references := []string{reference}
@@ -197,4 +225,17 @@ func extractManifestBlobDigests(m imageManifest) []string {
 		}
 	}
 	return out
+}
+
+func extractManifestReferences(m imageManifest) ([]string, []string) {
+	if len(m.Manifests) > 0 {
+		out := make([]string, 0, len(m.Manifests))
+		for _, child := range m.Manifests {
+			if child.Digest != "" {
+				out = append(out, child.Digest)
+			}
+		}
+		return nil, out
+	}
+	return extractManifestBlobDigests(m), nil
 }

@@ -19,6 +19,7 @@ type imageManifest struct {
 	SchemaVersion int          `json:"schemaVersion"`
 	Config        descriptor   `json:"config"`
 	Layers        []descriptor `json:"layers"`
+	Manifests     []descriptor `json:"manifests"`
 }
 
 const (

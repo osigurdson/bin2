@@ -205,6 +205,32 @@ func (d *DB) GetManifestByReference(ctx context.Context, registryID uuid.UUID, r
 	return body, contentType, digest, nil
 }
 
+func (d *DB) HasManifestDigestInRepository(ctx context.Context, registryID uuid.UUID, repository, manifestDigest string) (bool, error) {
+	const cmd = `SELECT 1
+		FROM repositories r
+		JOIN manifest_refs mr ON mr.repository_id = r.id
+		WHERE r.registry_id = $1
+		  AND r.name = $2
+		  AND mr.manifest_digest = $3
+		LIMIT 1`
+
+	var exists int
+	err := d.conn.QueryRow(
+		ctx,
+		cmd,
+		registryID,
+		strings.TrimSpace(repository),
+		strings.TrimSpace(manifestDigest),
+	).Scan(&exists)
+	if err != nil {
+		if isNoRows(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 func (d *DB) GetRegistryReferencedBlobBytes(ctx context.Context, registryID uuid.UUID) (int64, error) {
 	const cmd = `SELECT COALESCE(SUM(b.size_bytes), 0)
 		FROM (
