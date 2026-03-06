@@ -49,3 +49,4 @@ pull/.env
 registry-data/
 
 .pushcount
+tests/.testenv
