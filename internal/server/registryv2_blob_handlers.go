@@ -297,7 +297,7 @@ func setUploadHeaders(c *gin.Context, repo, uuid string, size int64) {
 
 func (s *Server) headBlobHandler(c *gin.Context, repo, digest string) {
 	if !validRepoName(repo) {
-		c.Status(http.StatusBadRequest)
+		writeOCIError(c, http.StatusBadRequest, "NAME_INVALID", "invalid repository name")
 		return
 	}
 	if !s.ensureRepoAuthorized(c, repo) {
@@ -306,17 +306,17 @@ func (s *Server) headBlobHandler(c *gin.Context, repo, digest string) {
 
 	digestHex, err := parseDigest(digest)
 	if err != nil {
-		c.Status(http.StatusBadRequest)
+		writeOCIError(c, http.StatusBadRequest, "DIGEST_INVALID", err.Error())
 		return
 	}
 
 	size, err := s.registryStorage.BlobSize(c.Request.Context(), digestHex)
 	if errors.Is(err, ErrBlobNotFound) {
-		c.Status(http.StatusNotFound)
+		writeOCIError(c, http.StatusNotFound, "BLOB_UNKNOWN", "blob not found")
 		return
 	}
 	if err != nil {
-		c.Status(http.StatusInternalServerError)
+		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to resolve blob")
 		return
 	}
 
@@ -327,7 +327,7 @@ func (s *Server) headBlobHandler(c *gin.Context, repo, digest string) {
 
 func (s *Server) getBlobHandler(c *gin.Context, repo, digest string) {
 	if !validRepoName(repo) {
-		c.Status(http.StatusBadRequest)
+		writeOCIError(c, http.StatusBadRequest, "NAME_INVALID", "invalid repository name")
 		return
 	}
 	if !s.ensureRepoAuthorized(c, repo) {
@@ -336,17 +336,17 @@ func (s *Server) getBlobHandler(c *gin.Context, repo, digest string) {
 
 	digestHex, err := parseDigest(digest)
 	if err != nil {
-		c.Status(http.StatusBadRequest)
+		writeOCIError(c, http.StatusBadRequest, "DIGEST_INVALID", err.Error())
 		return
 	}
 
 	body, size, err := s.registryStorage.GetBlob(c.Request.Context(), digestHex)
 	if errors.Is(err, ErrBlobNotFound) {
-		c.Status(http.StatusNotFound)
+		writeOCIError(c, http.StatusNotFound, "BLOB_UNKNOWN", "blob not found")
 		return
 	}
 	if err != nil {
-		c.Status(http.StatusInternalServerError)
+		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to load blob")
 		return
 	}
 	defer body.Close()
