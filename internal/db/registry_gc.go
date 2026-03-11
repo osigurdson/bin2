@@ -18,6 +18,13 @@ type UpsertRegistryManifestIndexArgs struct {
 	BlobDigests    []string
 }
 
+type RepositoryManifestRecord struct {
+	Digest      string
+	ContentType string
+	Size        int64
+	Body        []byte
+}
+
 func (d *DB) UpsertRegistryBlob(ctx context.Context, digest string, sizeBytes int64) error {
 	if sizeBytes <= 0 {
 		return fmt.Errorf("blob size must be > 0")
@@ -205,6 +212,49 @@ func (d *DB) GetManifestByReference(ctx context.Context, registryID uuid.UUID, r
 	return body, contentType, digest, nil
 }
 
+func (d *DB) ListRepositoryManifestRecords(ctx context.Context, registryID uuid.UUID, repository string) ([]RepositoryManifestRecord, error) {
+	const cmd = `SELECT DISTINCT ON (m.digest)
+			m.digest,
+			m.content_type,
+			OCTET_LENGTH(m.body),
+			m.body
+		FROM repositories r
+		JOIN manifest_refs mr ON mr.repository_id = r.id
+		JOIN manifests m ON m.digest = mr.manifest_digest
+		WHERE r.registry_id = $1
+		  AND r.name = $2
+		ORDER BY m.digest ASC`
+
+	rows, err := d.conn.Query(
+		ctx,
+		cmd,
+		registryID,
+		strings.TrimSpace(repository),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	records := make([]RepositoryManifestRecord, 0)
+	for rows.Next() {
+		var record RepositoryManifestRecord
+		if err := rows.Scan(
+			&record.Digest,
+			&record.ContentType,
+			&record.Size,
+			&record.Body,
+		); err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
 func (d *DB) HasManifestDigestInRepository(ctx context.Context, registryID uuid.UUID, repository, manifestDigest string) (bool, error) {
 	const cmd = `SELECT 1
 		FROM repositories r
@@ -229,6 +279,52 @@ func (d *DB) HasManifestDigestInRepository(ctx context.Context, registryID uuid.
 		return false, err
 	}
 	return true, nil
+}
+
+func (d *DB) ListRepositoryTags(ctx context.Context, registryID uuid.UUID, repository string, limit int, last string) ([]string, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	const cmd = `SELECT mr.reference
+		FROM repositories r
+		JOIN manifest_refs mr ON mr.repository_id = r.id
+		WHERE r.registry_id = $1
+		  AND r.name = $2
+		  AND mr.reference !~ '^sha256:[a-f0-9]{64}$'
+		  AND (
+		    $3 = ''
+		    OR LOWER(mr.reference) > LOWER($3)
+		    OR (LOWER(mr.reference) = LOWER($3) AND mr.reference > $3)
+		  )
+		ORDER BY LOWER(mr.reference) ASC, mr.reference ASC
+		LIMIT $4`
+
+	rows, err := d.conn.Query(
+		ctx,
+		cmd,
+		registryID,
+		strings.TrimSpace(repository),
+		strings.TrimSpace(last),
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tags := make([]string, 0, limit)
+	for rows.Next() {
+		var tag string
+		if err := rows.Scan(&tag); err != nil {
+			return nil, err
+		}
+		tags = append(tags, tag)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return tags, nil
 }
 
 func (d *DB) GetRegistryReferencedBlobBytes(ctx context.Context, registryID uuid.UUID) (int64, error) {

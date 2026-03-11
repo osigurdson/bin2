@@ -197,8 +197,26 @@ func requiredRegistryScope(relativePath, method string) (registryScopeRequiremen
 		}
 	}
 
+	if method == http.MethodGet {
+		if m := reUploadChunk.FindStringSubmatch(relative); m != nil {
+			req := registryScopeRequirement{repository: m[1], action: "push"}
+			return req, formatRepositoryScope(req.repository, req.action)
+		}
+	}
+
 	if method == http.MethodHead || method == http.MethodGet {
 		if m := reBlobPath.FindStringSubmatch(relative); m != nil {
+			req := registryScopeRequirement{repository: m[1], action: "pull"}
+			return req, formatRepositoryScope(req.repository, req.action)
+		}
+	}
+
+	if method == http.MethodGet {
+		if m := reTagsList.FindStringSubmatch(relative); m != nil {
+			req := registryScopeRequirement{repository: m[1], action: "pull"}
+			return req, formatRepositoryScope(req.repository, req.action)
+		}
+		if m := reReferrers.FindStringSubmatch(relative); m != nil {
 			req := registryScopeRequirement{repository: m[1], action: "pull"}
 			return req, formatRepositoryScope(req.repository, req.action)
 		}

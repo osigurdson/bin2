@@ -48,6 +48,16 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 		return
 	}
 
+	subjectDigest := ""
+	if manifest.Subject != nil && manifest.Subject.Digest != "" {
+		subjectHex, err := parseDigest(manifest.Subject.Digest)
+		if err != nil {
+			writeOCIError(c, http.StatusBadRequest, "MANIFEST_INVALID", "manifest references invalid subject digest")
+			return
+		}
+		subjectDigest = "sha256:" + subjectHex
+	}
+
 	registryID, err := s.resolveRegistryIDForRepo(c.Request.Context(), auth, repo)
 	if err != nil {
 		if errors.Is(err, errUnauthorized) {
@@ -143,6 +153,9 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 	}
 
 	c.Header("Docker-Content-Digest", manifestDigest)
+	if subjectDigest != "" {
+		c.Header("OCI-Subject", subjectDigest)
+	}
 	c.Header("Location", "/v2/"+repo+"/manifests/"+reference)
 	c.Status(http.StatusCreated)
 }

@@ -142,6 +142,17 @@ func (r *r2RegistryStorage) UploadSHA256(
 	return sum, err
 }
 
+func (r *r2RegistryStorage) UploadSize(_ context.Context, uuid string) (int64, error) {
+	info, err := os.Stat(r.uploadPath(uuid))
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, ErrUploadNotFound
+	}
+	if err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
+}
+
 func (r *r2RegistryStorage) DeleteUpload(_ context.Context, uuid string) error {
 	err := os.Remove(r.uploadPath(uuid))
 	if errors.Is(err, os.ErrNotExist) {

@@ -28,16 +28,6 @@ type Server struct {
 }
 
 func New() (*Server, error) {
-	workosAPIKey := os.Getenv("WORKOS_API_KEY")
-	if workosAPIKey == "" {
-		return nil, fmt.Errorf("WORKOS_API_KEY is not defined")
-	}
-
-	workosClientID := os.Getenv("WORKOS_CLIENT_ID")
-	if workosClientID == "" {
-		return nil, fmt.Errorf("WORKOS_CLIENT_ID is not defined")
-	}
-
 	apiKeyEncKeyHex := os.Getenv("API_KEY_ENCRYPTION_KEY")
 	if apiKeyEncKeyHex == "" {
 		return nil, fmt.Errorf("API_KEY_ENCRYPTION_KEY is not defined")
@@ -48,6 +38,16 @@ func New() (*Server, error) {
 	}
 	var apiKeyEncryptionKey [32]byte
 	copy(apiKeyEncryptionKey[:], apiKeyEncKeyBytes)
+
+	workosAPIKey := os.Getenv("WORKOS_API_KEY")
+	if workosAPIKey == "" {
+		return nil, fmt.Errorf("WORKOS_API_KEY is not defined")
+	}
+
+	workosClientID := os.Getenv("WORKOS_CLIENT_ID")
+	if workosClientID == "" {
+		return nil, fmt.Errorf("WORKOS_CLIENT_ID is not defined")
+	}
 
 	usermanagement.SetAPIKey(workosAPIKey)
 

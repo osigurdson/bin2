@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -91,4 +92,28 @@ func uploadRange(size int64) string {
 		return "0-0"
 	}
 	return fmt.Sprintf("0-%d", size-1)
+}
+
+func parseUploadRange(raw string) (int64, int64, error) {
+	matches := reRange.FindStringSubmatch(strings.TrimSpace(raw))
+	if len(matches) != 3 {
+		return 0, 0, fmt.Errorf("invalid range")
+	}
+
+	start, err := strconv.ParseInt(matches[1], 10, 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid range")
+	}
+	end, err := strconv.ParseInt(matches[2], 10, 64)
+	if err != nil || end < start {
+		return 0, 0, fmt.Errorf("invalid range")
+	}
+	return start, end, nil
+}
+
+func uploadRangeMatchesContentLength(start, end, contentLength int64) bool {
+	if contentLength < 0 {
+		return true
+	}
+	return end-start+1 == contentLength
 }

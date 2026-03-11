@@ -45,15 +45,30 @@ func (s *Server) v2Handler(c *gin.Context) {
 		}
 	}
 
-	if c.Request.Method == http.MethodPatch || c.Request.Method == http.MethodPut {
+	if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodPatch || c.Request.Method == http.MethodPut {
 		if m := reUploadChunk.FindStringSubmatch(relative); m != nil {
 			repo := m[1]
 			uuid := m[2]
+			if c.Request.Method == http.MethodGet {
+				s.getBlobUploadHandler(c, repo, uuid)
+				return
+			}
 			if c.Request.Method == http.MethodPatch {
 				s.patchBlobUploadHandler(c, repo, uuid)
 				return
 			}
 			s.finalizeBlobUploadHandler(c, repo, uuid)
+			return
+		}
+	}
+
+	if c.Request.Method == http.MethodGet {
+		if m := reTagsList.FindStringSubmatch(relative); m != nil {
+			s.listTagsHandler(c, m[1])
+			return
+		}
+		if m := reReferrers.FindStringSubmatch(relative); m != nil {
+			s.listReferrersHandler(c, m[1], m[2])
 			return
 		}
 	}

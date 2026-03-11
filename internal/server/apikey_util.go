@@ -22,10 +22,12 @@ func generateAPIKey() (fullKey string, prefix string, err error) {
 	if _, err = rand.Read(prefixBytes); err != nil {
 		return "", "", err
 	}
+
 	secretBytes := make([]byte, 32)
 	if _, err = rand.Read(secretBytes); err != nil {
 		return "", "", err
 	}
+
 	prefix = hex.EncodeToString(prefixBytes)
 	secret := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(secretBytes)
 	fullKey = fmt.Sprintf("sk_%s_%s", prefix, secret)
@@ -43,10 +45,12 @@ func encryptAPIKey(fullKey string, encKey [32]byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
 		return "", err
 	}
+
 	ciphertext := gcm.Seal(nonce, nonce, []byte(fullKey), nil)
 	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
@@ -57,6 +61,7 @@ func decryptAPIKey(encrypted string, encKey [32]byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	block, err := aes.NewCipher(encKey[:])
 	if err != nil {
 		return "", err
@@ -68,6 +73,7 @@ func decryptAPIKey(encrypted string, encKey [32]byte) (string, error) {
 	if len(data) < gcm.NonceSize() {
 		return "", fmt.Errorf("ciphertext too short")
 	}
+
 	nonce, ciphertext := data[:gcm.NonceSize()], data[gcm.NonceSize():]
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
