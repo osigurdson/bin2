@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"bin2.io/internal/apikey"
 	"bin2.io/internal/db"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -101,13 +102,13 @@ func (s *Server) addAPIKeyHandler(c *gin.Context) {
 		return
 	}
 
-	fullKey, prefix, err := generateAPIKey()
+	fullKey, prefix, err := apikey.Generate()
 	if err != nil {
 		logError(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 		return
 	}
-	encrypted, err := encryptAPIKey(fullKey, s.apiKeyEncryptionKey)
+	encrypted, err := apikey.Encrypt(fullKey, s.apiKeyEncryptionKey)
 	if err != nil {
 		logError(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
@@ -154,7 +155,7 @@ func (s *Server) listAPIKeysHandler(c *gin.Context) {
 
 	keys := make([]apiKeyResponse, 0, len(apiKeyRecs))
 	for _, rec := range apiKeyRecs {
-		fullKey, err := decryptAPIKey(rec.SecretEncrypted, s.apiKeyEncryptionKey)
+		fullKey, err := apikey.Decrypt(rec.SecretEncrypted, s.apiKeyEncryptionKey)
 		if err != nil {
 			logError(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})

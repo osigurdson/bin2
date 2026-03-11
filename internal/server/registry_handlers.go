@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"bin2.io/internal/apikey"
 	"bin2.io/internal/db"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -301,13 +302,13 @@ func (s *Server) addRegistryHandler(c *gin.Context) {
 		return
 	}
 
-	fullKey, prefix, err := generateAPIKey()
+	fullKey, prefix, err := apikey.Generate()
 	if err != nil {
 		logError(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create registry"})
 		return
 	}
-	encrypted, err := encryptAPIKey(fullKey, s.apiKeyEncryptionKey)
+	encrypted, err := apikey.Encrypt(fullKey, s.apiKeyEncryptionKey)
 	if err != nil {
 		logError(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create registry"})
