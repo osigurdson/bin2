@@ -212,6 +212,13 @@ func requiredRegistryScope(relativePath, method string) (registryScopeRequiremen
 		}
 	}
 
+	if method == http.MethodDelete {
+		if m := reBlobPath.FindStringSubmatch(relative); m != nil {
+			req := registryScopeRequirement{repository: m[1], action: "push"}
+			return req, formatRepositoryScope(req.repository, req.action)
+		}
+	}
+
 	if method == http.MethodGet {
 		if m := reTagsList.FindStringSubmatch(relative); m != nil {
 			req := registryScopeRequirement{repository: m[1], action: "pull"}
@@ -230,6 +237,13 @@ func requiredRegistryScope(relativePath, method string) (registryScopeRequiremen
 				action = "push"
 			}
 			req := registryScopeRequirement{repository: m[1], action: action}
+			return req, formatRepositoryScope(req.repository, req.action)
+		}
+	}
+
+	if method == http.MethodDelete {
+		if m := reManifestRef.FindStringSubmatch(relative); m != nil {
+			req := registryScopeRequirement{repository: m[1], action: "push"}
 			return req, formatRepositoryScope(req.repository, req.action)
 		}
 	}

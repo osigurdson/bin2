@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 type UpsertRegistryManifestIndexArgs struct {
@@ -181,6 +182,130 @@ func (d *DB) DeleteRegistryBlob(ctx context.Context, digest string) error {
 	const cmd = `DELETE FROM blobs WHERE digest = $1`
 	_, err := d.conn.Exec(ctx, cmd, strings.TrimSpace(digest))
 	return err
+}
+
+func (d *DB) BlobReferenced(ctx context.Context, digest string) (bool, error) {
+	const cmd = `SELECT 1
+		FROM manifest_blob_refs mb
+		JOIN manifest_refs mr
+		  ON mr.repository_id = mb.repository_id
+		 AND mr.manifest_digest = mb.manifest_digest
+		WHERE mb.blob_digest = $1
+		LIMIT 1`
+
+	var exists int
+	err := d.conn.QueryRow(ctx, cmd, strings.TrimSpace(digest)).Scan(&exists)
+	if err != nil {
+		if isNoRows(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func (d *DB) DeleteManifestReference(
+	ctx context.Context,
+	registryID uuid.UUID,
+	repository string,
+	reference string,
+) (bool, error) {
+	tx, err := d.conn.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+
+	repositoryID, err := lookupRepositoryID(ctx, tx, registryID, repository)
+	if err != nil {
+		if err == ErrNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+
+	const deleteRefCmd = `DELETE FROM manifest_refs
+		WHERE repository_id = $1
+		  AND reference = $2
+		RETURNING manifest_digest`
+
+	var manifestDigest string
+	err = tx.QueryRow(
+		ctx,
+		deleteRefCmd,
+		repositoryID,
+		strings.TrimSpace(reference),
+	).Scan(&manifestDigest)
+	if err != nil {
+		if isNoRows(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	if err := cleanupManifestArtifacts(ctx, tx, repositoryID, manifestDigest); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (d *DB) DeleteManifestByDigestInRepository(
+	ctx context.Context,
+	registryID uuid.UUID,
+	repository string,
+	manifestDigest string,
+) (bool, error) {
+	tx, err := d.conn.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+
+	repositoryID, err := lookupRepositoryID(ctx, tx, registryID, repository)
+	if err != nil {
+		if err == ErrNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+
+	const deleteRefsCmd = `DELETE FROM manifest_refs
+		WHERE repository_id = $1
+		  AND manifest_digest = $2
+		RETURNING manifest_digest`
+
+	rows, err := tx.Query(
+		ctx,
+		deleteRefsCmd,
+		repositoryID,
+		strings.TrimSpace(manifestDigest),
+	)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	deleted := false
+	for rows.Next() {
+		deleted = true
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	if !deleted {
+		return false, nil
+	}
+
+	if err := cleanupManifestArtifacts(ctx, tx, repositoryID, manifestDigest); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (d *DB) GetManifestByReference(ctx context.Context, registryID uuid.UUID, repository, reference string) ([]byte, string, string, error) {
@@ -364,4 +489,52 @@ func dedupeNonEmpty(values []string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func lookupRepositoryID(ctx context.Context, tx pgx.Tx, registryID uuid.UUID, repository string) (uuid.UUID, error) {
+	const cmd = `SELECT id
+		FROM repositories
+		WHERE registry_id = $1
+		  AND name = $2
+		LIMIT 1`
+
+	var repositoryID uuid.UUID
+	err := tx.QueryRow(ctx, cmd, registryID, strings.TrimSpace(repository)).Scan(&repositoryID)
+	if err != nil {
+		if isNoRows(err) {
+			return uuid.Nil, ErrNotFound
+		}
+		return uuid.Nil, err
+	}
+	return repositoryID, nil
+}
+
+func cleanupManifestArtifacts(ctx context.Context, tx pgx.Tx, repositoryID uuid.UUID, manifestDigest string) error {
+	manifestDigest = strings.TrimSpace(manifestDigest)
+	if manifestDigest == "" {
+		return nil
+	}
+
+	const deleteBlobRefsCmd = `DELETE FROM manifest_blob_refs
+		WHERE repository_id = $1
+		  AND manifest_digest = $2
+		  AND NOT EXISTS (
+		    SELECT 1
+		    FROM manifest_refs
+		    WHERE repository_id = $1
+		      AND manifest_digest = $2
+		  )`
+	if _, err := tx.Exec(ctx, deleteBlobRefsCmd, repositoryID, manifestDigest); err != nil {
+		return err
+	}
+
+	const deleteManifestCmd = `DELETE FROM manifests
+		WHERE digest = $1
+		  AND NOT EXISTS (
+		    SELECT 1
+		    FROM manifest_refs
+		    WHERE manifest_digest = $1
+		  )`
+	_, err := tx.Exec(ctx, deleteManifestCmd, manifestDigest)
+	return err
 }

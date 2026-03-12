@@ -220,6 +220,25 @@ func (r *r2RegistryStorage) GetBlob(
 	return out.Body, size, nil
 }
 
+func (r *r2RegistryStorage) DeleteBlob(
+	ctx context.Context,
+	digestHex string,
+) error {
+	exists, err := r.BlobExists(ctx, digestHex)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrBlobNotFound
+	}
+
+	_, err = r.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(r.bucket),
+		Key:    aws.String(blobObjectKey(digestHex)),
+	})
+	return err
+}
+
 func (r *r2RegistryStorage) StoreBlobFromUpload(
 	ctx context.Context,
 	uuid string,

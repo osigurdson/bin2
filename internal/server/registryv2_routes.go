@@ -73,24 +73,30 @@ func (s *Server) v2Handler(c *gin.Context) {
 		}
 	}
 
-	if c.Request.Method == http.MethodHead || c.Request.Method == http.MethodGet {
+	if c.Request.Method == http.MethodHead || c.Request.Method == http.MethodGet || c.Request.Method == http.MethodDelete {
 		if m := reBlobPath.FindStringSubmatch(relative); m != nil {
 			if c.Request.Method == http.MethodHead {
 				s.headBlobHandler(c, m[1], m[2])
 				return
 			}
-			s.getBlobHandler(c, m[1], m[2])
+			if c.Request.Method == http.MethodGet {
+				s.getBlobHandler(c, m[1], m[2])
+				return
+			}
+			s.deleteBlobHandler(c, m[1], m[2])
 			return
 		}
 	}
 
-	if c.Request.Method == http.MethodPut || c.Request.Method == http.MethodHead || c.Request.Method == http.MethodGet {
+	if c.Request.Method == http.MethodPut || c.Request.Method == http.MethodHead || c.Request.Method == http.MethodGet || c.Request.Method == http.MethodDelete {
 		if m := reManifestRef.FindStringSubmatch(relative); m != nil {
 			switch c.Request.Method {
 			case http.MethodPut:
 				s.putManifestHandler(c, m[1], m[2])
 			case http.MethodHead:
 				s.headManifestHandler(c, m[1], m[2])
+			case http.MethodDelete:
+				s.deleteManifestHandler(c, m[1], m[2])
 			default:
 				s.getManifestHandler(c, m[1], m[2])
 			}

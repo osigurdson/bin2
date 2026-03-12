@@ -354,3 +354,44 @@ func (s *Server) getBlobHandler(c *gin.Context, repo, digest string) {
 	c.Header("Docker-Content-Digest", "sha256:"+digestHex)
 	c.DataFromReader(http.StatusOK, size, defaultBlobContentType, body, nil)
 }
+
+func (s *Server) deleteBlobHandler(c *gin.Context, repo, digest string) {
+	if !validRepoName(repo) {
+		writeOCIError(c, http.StatusBadRequest, "NAME_INVALID", "invalid repository name")
+		return
+	}
+	if !s.ensureRepoAuthorized(c, repo) {
+		return
+	}
+
+	digestHex, err := parseDigest(digest)
+	if err != nil {
+		writeOCIError(c, http.StatusBadRequest, "DIGEST_INVALID", err.Error())
+		return
+	}
+
+	fullDigest := "sha256:" + digestHex
+	if err := s.registryStorage.DeleteBlob(c.Request.Context(), digestHex); err != nil {
+		if errors.Is(err, ErrBlobNotFound) {
+			if s.db != nil {
+				if err := s.db.DeleteRegistryBlob(c.Request.Context(), fullDigest); err != nil {
+					writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to update blob index")
+					return
+				}
+			}
+			c.Status(http.StatusNotFound)
+			return
+		}
+		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to delete blob")
+		return
+	}
+
+	if s.db != nil {
+		if err := s.db.DeleteRegistryBlob(c.Request.Context(), fullDigest); err != nil {
+			writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to update blob index")
+			return
+		}
+	}
+
+	c.Status(http.StatusAccepted)
+}
