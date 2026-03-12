@@ -58,3 +58,21 @@ func (d *DB) SetUserOnboarded(ctx context.Context, userID uuid.UUID, onboarded b
 	}
 	return nil
 }
+
+func (d *DB) GetOrCreateUserInTenant(ctx context.Context, sub string, tenantID uuid.UUID) (User, error) {
+	if sub == "" {
+		return User{}, fmt.Errorf("sub not specified")
+	}
+
+	var user User
+	err := d.conn.QueryRow(ctx, `
+		INSERT INTO users (id, tenant_id, sub)
+		VALUES (gen_random_uuid(), $1, $2)
+		ON CONFLICT (sub) DO UPDATE SET tenant_id = EXCLUDED.tenant_id
+		RETURNING id, tenant_id, sub, (SELECT onboarded FROM tenants WHERE id = $1)
+	`, tenantID, sub).Scan(&user.ID, &user.TenantID, &user.Sub, &user.Onboarded)
+	if err != nil {
+		return user, err
+	}
+	return user, nil
+}

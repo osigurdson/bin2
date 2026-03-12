@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"bin2.io/internal/apikey"
 	"bin2.io/internal/db"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -93,7 +94,7 @@ func (s *Server) authenticateRegistryBasic(c *gin.Context) (registryAuthContext,
 	}
 
 	providedKey := strings.TrimSpace(password)
-	prefix, err := parseAPIKeyPrefix(providedKey)
+	prefix, err := apikey.ParsePrefix(providedKey)
 	if err != nil {
 		return registryAuthContext{}, errUnauthorized
 	}
@@ -106,8 +107,8 @@ func (s *Server) authenticateRegistryBasic(c *gin.Context) (registryAuthContext,
 		return registryAuthContext{}, err
 	}
 
-	decrypted, err := decryptAPIKey(apiKeyRec.SecretEncrypted, s.apiKeyEncryptionKey)
-	if err != nil || !matchAPIKey(providedKey, decrypted) {
+	decrypted, err := apikey.Decrypt(apiKeyRec.SecretEncrypted, s.apiKeyEncryptionKey)
+	if err != nil || !apikey.Match(providedKey, decrypted) {
 		return registryAuthContext{}, errUnauthorized
 	}
 
@@ -197,8 +198,33 @@ func requiredRegistryScope(relativePath, method string) (registryScopeRequiremen
 		}
 	}
 
+	if method == http.MethodGet {
+		if m := reUploadChunk.FindStringSubmatch(relative); m != nil {
+			req := registryScopeRequirement{repository: m[1], action: "push"}
+			return req, formatRepositoryScope(req.repository, req.action)
+		}
+	}
+
 	if method == http.MethodHead || method == http.MethodGet {
 		if m := reBlobPath.FindStringSubmatch(relative); m != nil {
+			req := registryScopeRequirement{repository: m[1], action: "pull"}
+			return req, formatRepositoryScope(req.repository, req.action)
+		}
+	}
+
+	if method == http.MethodDelete {
+		if m := reBlobPath.FindStringSubmatch(relative); m != nil {
+			req := registryScopeRequirement{repository: m[1], action: "push"}
+			return req, formatRepositoryScope(req.repository, req.action)
+		}
+	}
+
+	if method == http.MethodGet {
+		if m := reTagsList.FindStringSubmatch(relative); m != nil {
+			req := registryScopeRequirement{repository: m[1], action: "pull"}
+			return req, formatRepositoryScope(req.repository, req.action)
+		}
+		if m := reReferrers.FindStringSubmatch(relative); m != nil {
 			req := registryScopeRequirement{repository: m[1], action: "pull"}
 			return req, formatRepositoryScope(req.repository, req.action)
 		}
@@ -211,6 +237,13 @@ func requiredRegistryScope(relativePath, method string) (registryScopeRequiremen
 				action = "push"
 			}
 			req := registryScopeRequirement{repository: m[1], action: action}
+			return req, formatRepositoryScope(req.repository, req.action)
+		}
+	}
+
+	if method == http.MethodDelete {
+		if m := reManifestRef.FindStringSubmatch(relative); m != nil {
+			req := registryScopeRequirement{repository: m[1], action: "push"}
 			return req, formatRepositoryScope(req.repository, req.action)
 		}
 	}

@@ -142,6 +142,17 @@ func (r *r2RegistryStorage) UploadSHA256(
 	return sum, err
 }
 
+func (r *r2RegistryStorage) UploadSize(_ context.Context, uuid string) (int64, error) {
+	info, err := os.Stat(r.uploadPath(uuid))
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, ErrUploadNotFound
+	}
+	if err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
+}
+
 func (r *r2RegistryStorage) DeleteUpload(_ context.Context, uuid string) error {
 	err := os.Remove(r.uploadPath(uuid))
 	if errors.Is(err, os.ErrNotExist) {
@@ -207,6 +218,25 @@ func (r *r2RegistryStorage) GetBlob(
 		size = *out.ContentLength
 	}
 	return out.Body, size, nil
+}
+
+func (r *r2RegistryStorage) DeleteBlob(
+	ctx context.Context,
+	digestHex string,
+) error {
+	exists, err := r.BlobExists(ctx, digestHex)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrBlobNotFound
+	}
+
+	_, err = r.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(r.bucket),
+		Key:    aws.String(blobObjectKey(digestHex)),
+	})
+	return err
 }
 
 func (r *r2RegistryStorage) StoreBlobFromUpload(

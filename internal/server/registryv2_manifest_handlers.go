@@ -48,6 +48,16 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 		return
 	}
 
+	subjectDigest := ""
+	if manifest.Subject != nil && manifest.Subject.Digest != "" {
+		subjectHex, err := parseDigest(manifest.Subject.Digest)
+		if err != nil {
+			writeOCIError(c, http.StatusBadRequest, "MANIFEST_INVALID", "manifest references invalid subject digest")
+			return
+		}
+		subjectDigest = "sha256:" + subjectHex
+	}
+
 	registryID, err := s.resolveRegistryIDForRepo(c.Request.Context(), auth, repo)
 	if err != nil {
 		if errors.Is(err, errUnauthorized) {
@@ -93,6 +103,7 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 		}
 	}
 
+	normalizedChildManifestDigests := make([]string, 0, len(childManifestDigests))
 	seenManifestDigests := make(map[string]struct{}, len(childManifestDigests))
 	for _, childManifestDigest := range childManifestDigests {
 		if s.db == nil {
@@ -118,16 +129,18 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 			return
 		}
 		seenManifestDigests[normalizedDigest] = struct{}{}
+		normalizedChildManifestDigests = append(normalizedChildManifestDigests, normalizedDigest)
 	}
 
 	sum := sha256.Sum256(manifestBytes)
 	manifestDigest := "sha256:" + hex.EncodeToString(sum[:])
 
-	contentType := manifestContentType(c.GetHeader("Content-Type"))
-	references := []string{reference}
+	tag := ""
 	if reference != manifestDigest {
-		references = append(references, manifestDigest)
+		tag = reference
 	}
+
+	contentType := manifestContentType(c.GetHeader("Content-Type"))
 	if err := s.indexRegistryManifest(
 		c.Request.Context(),
 		registryID,
@@ -135,14 +148,19 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 		manifestDigest,
 		manifestBytes,
 		contentType,
-		references,
+		tag,
 		normalizedBlobDigests,
+		normalizedChildManifestDigests,
+		subjectDigest,
 	); err != nil {
 		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to store manifest")
 		return
 	}
 
 	c.Header("Docker-Content-Digest", manifestDigest)
+	if subjectDigest != "" {
+		c.Header("OCI-Subject", subjectDigest)
+	}
 	c.Header("Location", "/v2/"+repo+"/manifests/"+reference)
 	c.Status(http.StatusCreated)
 }
@@ -167,6 +185,66 @@ func (s *Server) headManifestHandler(c *gin.Context, repo, reference string) {
 	c.Header("Docker-Content-Digest", digest)
 	c.Header("Content-Length", fmt.Sprintf("%d", len(manifestBytes)))
 	c.Status(http.StatusOK)
+}
+
+func (s *Server) deleteManifestHandler(c *gin.Context, repo, reference string) {
+	if !validRepoName(repo) {
+		writeOCIError(c, http.StatusBadRequest, "NAME_INVALID", "invalid repository name")
+		return
+	}
+	if !s.ensureRepoAuthorized(c, repo) {
+		return
+	}
+	auth, err := s.getRegistryAuth(c)
+	if err != nil {
+		writeOCIError(c, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
+		return
+	}
+	if !validReference(reference) {
+		writeOCIError(c, http.StatusBadRequest, "MANIFEST_INVALID", "invalid manifest reference")
+		return
+	}
+	if s.db == nil {
+		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "manifest index unavailable")
+		return
+	}
+
+	registryID, err := s.resolveRegistryIDForRepo(c.Request.Context(), auth, repo)
+	if err != nil {
+		if errors.Is(err, errUnauthorized) {
+			writeOCIError(c, http.StatusForbidden, "DENIED", "access denied to this repository")
+			return
+		}
+		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to resolve registry")
+		return
+	}
+
+	var deleted bool
+	if digestHex, err := parseDigest(reference); err == nil {
+		deleted, err = s.db.DeleteManifestByDigestInRepository(
+			c.Request.Context(),
+			registryID,
+			repoLeaf(repo),
+			"sha256:"+digestHex,
+		)
+	} else {
+		deleted, err = s.db.DeleteManifestReference(
+			c.Request.Context(),
+			registryID,
+			repoLeaf(repo),
+			reference,
+		)
+	}
+	if err != nil {
+		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to delete manifest")
+		return
+	}
+	if !deleted {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	c.Status(http.StatusAccepted)
 }
 
 func (s *Server) loadManifestResponse(c *gin.Context, repo, reference string) ([]byte, string, string, error) {

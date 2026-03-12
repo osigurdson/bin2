@@ -44,11 +44,16 @@ func TestRequiredRegistryScope(t *testing.T) {
 		wantScope string
 	}{
 		{path: "alpha/app/blobs/uploads/", method: "POST", wantScope: "repository:alpha/app:push"},
+		{path: "alpha/app/blobs/uploads/123", method: "GET", wantScope: "repository:alpha/app:push"},
 		{path: "alpha/app/blobs/uploads/123", method: "PATCH", wantScope: "repository:alpha/app:push"},
 		{path: "alpha/app/blobs/uploads/123", method: "PUT", wantScope: "repository:alpha/app:push"},
 		{path: "alpha/app/blobs/sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789", method: "GET", wantScope: "repository:alpha/app:pull"},
+		{path: "alpha/app/blobs/sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789", method: "DELETE", wantScope: "repository:alpha/app:push"},
+		{path: "alpha/app/tags/list", method: "GET", wantScope: "repository:alpha/app:pull"},
+		{path: "alpha/app/referrers/sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789", method: "GET", wantScope: "repository:alpha/app:pull"},
 		{path: "alpha/app/manifests/latest", method: "GET", wantScope: "repository:alpha/app:pull"},
 		{path: "alpha/app/manifests/latest", method: "PUT", wantScope: "repository:alpha/app:push"},
+		{path: "alpha/app/manifests/latest", method: "DELETE", wantScope: "repository:alpha/app:push"},
 		{path: "", method: "GET", wantScope: ""},
 		{path: "token", method: "GET", wantScope: ""},
 	}

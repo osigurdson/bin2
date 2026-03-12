@@ -13,7 +13,7 @@ CREATE UNIQUE INDEX unique_tenants_name ON tenants(name);
 -- users
 CREATE TABLE users (
   id UUID PRIMARY KEY,
-  tenant_id UUID NOT NULL 
+  tenant_id UUID NOT NULL
     REFERENCES tenants(id),
   sub TEXT NOT NULL
 );
@@ -42,9 +42,7 @@ CREATE TABLE repositories (
   CHECK (name <> ''),
   UNIQUE (registry_id, name)
 );
-
-CREATE INDEX idx_repositories_registry_id
-  ON repositories (registry_id, id);
+CREATE INDEX idx_repositories_registry_id ON repositories (registry_id, id);
 
 -- api keys
 CREATE TYPE api_key_permission AS ENUM ('read', 'write', 'admin');
@@ -74,62 +72,55 @@ CREATE TABLE api_key_scopes (
   permission api_key_permission NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
 CREATE INDEX idx_api_key_scopes_api_key_id ON api_key_scopes (api_key_id);
 CREATE INDEX idx_api_key_scopes_registry_repo_id ON api_key_scopes (registry_id, repository_id);
 CREATE UNIQUE INDEX unique_api_key_registry_scope
   ON api_key_scopes (api_key_id, registry_id)
   WHERE repository_id IS NULL;
-
 CREATE UNIQUE INDEX unique_api_key_repository_scope
   ON api_key_scopes (api_key_id, registry_id, repository_id)
   WHERE repository_id IS NOT NULL;
 
--- blob GC index
-CREATE TABLE blobs (
+-- objects: unified store for blobs, manifests, and manifest indexes
+CREATE TABLE objects (
   digest TEXT PRIMARY KEY,
-  size_bytes BIGINT NOT NULL CHECK (size_bytes > 0),
+  size_bytes BIGINT NOT NULL CHECK (size_bytes >= 0),
+  type TEXT NOT NULL,
+  content_type TEXT NOT NULL DEFAULT '',
+  storage TEXT NOT NULL DEFAULT 'r2',
+  body BYTEA,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  existence_checked_at TIMESTAMPTZ,
+  CHECK (digest ~ '^sha256:[a-f0-9]{64}$'),
+  CHECK (storage IN ('db', 'r2')),
+  CHECK (type IN ('blob', 'manifest', 'manifest_index'))
+);
+
+-- graph: directed relationships between objects
+CREATE TABLE graph (
+  parent_digest TEXT NOT NULL REFERENCES objects(digest) ON DELETE CASCADE,
+  child_digest TEXT NOT NULL REFERENCES objects(digest) ON DELETE CASCADE,
+  position INT NOT NULL DEFAULT 0,
+  is_subject BOOLEAN NOT NULL DEFAULT FALSE,
+  PRIMARY KEY (parent_digest, child_digest)
+);
+CREATE INDEX idx_graph_child ON graph (child_digest);
+
+-- tags: named references within a repository
+CREATE TABLE tags (
+  repository_id UUID NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  digest TEXT NOT NULL REFERENCES objects(digest) ON DELETE CASCADE,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (repository_id, name),
+  CHECK (name <> ''),
   CHECK (digest ~ '^sha256:[a-f0-9]{64}$')
 );
+CREATE INDEX idx_tags_digest ON tags (digest);
 
-CREATE TABLE manifests (
-  digest TEXT PRIMARY KEY,
-  content_type TEXT NOT NULL,
-  body BYTEA NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CHECK (digest ~ '^sha256:[a-f0-9]{64}$'),
-  CHECK (content_type <> '')
+-- repository_objects: objects directly associated with a repository (for storage accounting)
+CREATE TABLE repository_objects (
+  repository_id UUID NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+  digest TEXT NOT NULL REFERENCES objects(digest) ON DELETE CASCADE,
+  PRIMARY KEY (repository_id, digest)
 );
-
-CREATE TABLE manifest_refs (
-  repository_id UUID NOT NULL
-    REFERENCES repositories(id) ON DELETE CASCADE,
-  reference TEXT NOT NULL,
-  manifest_digest TEXT NOT NULL
-    REFERENCES manifests(digest) ON DELETE CASCADE,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (repository_id, reference),
-  CHECK (reference <> ''),
-  CHECK (manifest_digest ~ '^sha256:[a-f0-9]{64}$')
-);
-
-CREATE INDEX idx_manifest_refs_manifest
-  ON manifest_refs (repository_id, manifest_digest);
-
-CREATE TABLE manifest_blob_refs (
-  repository_id UUID NOT NULL
-    REFERENCES repositories(id) ON DELETE CASCADE,
-  manifest_digest TEXT NOT NULL
-    REFERENCES manifests(digest) ON DELETE CASCADE,
-  blob_digest TEXT NOT NULL
-    REFERENCES blobs(digest) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (repository_id, manifest_digest, blob_digest),
-  CHECK (manifest_digest ~ '^sha256:[a-f0-9]{64}$'),
-  CHECK (blob_digest ~ '^sha256:[a-f0-9]{64}$')
-);
-
-CREATE INDEX idx_manifest_blob_refs_blob
-  ON manifest_blob_refs (blob_digest);

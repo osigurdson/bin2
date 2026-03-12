@@ -73,14 +73,13 @@ func (d *DB) ListRepositoriesByRegistryID(ctx context.Context, registryID uuid.U
 			r.name,
 			r.created_at,
 			r.last_pushed_at,
-			last_tag.reference
+			last_tag.name
 		FROM repositories r
 		LEFT JOIN LATERAL (
-			SELECT mr.reference
-			FROM manifest_refs mr
-			WHERE mr.repository_id = r.id
-			  AND mr.reference !~ '^sha256:[a-f0-9]{64}$'
-			ORDER BY mr.updated_at DESC
+			SELECT t.name
+			FROM tags t
+			WHERE t.repository_id = r.id
+			ORDER BY t.updated_at DESC
 			LIMIT 1
 		) AS last_tag ON TRUE
 		WHERE r.registry_id = $1

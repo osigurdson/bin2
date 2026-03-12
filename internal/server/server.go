@@ -7,12 +7,31 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"bin2.io/internal/db"
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/gin-gonic/gin"
 	"github.com/workos/workos-go/v4/pkg/usermanagement"
 )
+
+type probeCache struct {
+	mu     sync.Mutex
+	recent map[string]time.Time
+}
+
+func (p *probeCache) shouldUpdate(digest string) bool {
+	const debounce = 30 * time.Second
+	now := time.Now()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if t, ok := p.recent[digest]; ok && now.Sub(t) < debounce {
+		return false
+	}
+	p.recent[digest] = now
+	return true
+}
 
 type Server struct {
 	ctx                   context.Context
@@ -25,19 +44,10 @@ type Server struct {
 	jwks                  keyfunc.Keyfunc
 	workosClientID        string
 	apiKeyEncryptionKey   [32]byte
+	probeCache            *probeCache
 }
 
 func New() (*Server, error) {
-	workosAPIKey := os.Getenv("WORKOS_API_KEY")
-	if workosAPIKey == "" {
-		return nil, fmt.Errorf("WORKOS_API_KEY is not defined")
-	}
-
-	workosClientID := os.Getenv("WORKOS_CLIENT_ID")
-	if workosClientID == "" {
-		return nil, fmt.Errorf("WORKOS_CLIENT_ID is not defined")
-	}
-
 	apiKeyEncKeyHex := os.Getenv("API_KEY_ENCRYPTION_KEY")
 	if apiKeyEncKeyHex == "" {
 		return nil, fmt.Errorf("API_KEY_ENCRYPTION_KEY is not defined")
@@ -48,6 +58,16 @@ func New() (*Server, error) {
 	}
 	var apiKeyEncryptionKey [32]byte
 	copy(apiKeyEncryptionKey[:], apiKeyEncKeyBytes)
+
+	workosAPIKey := os.Getenv("WORKOS_API_KEY")
+	if workosAPIKey == "" {
+		return nil, fmt.Errorf("WORKOS_API_KEY is not defined")
+	}
+
+	workosClientID := os.Getenv("WORKOS_CLIENT_ID")
+	if workosClientID == "" {
+		return nil, fmt.Errorf("WORKOS_CLIENT_ID is not defined")
+	}
 
 	usermanagement.SetAPIKey(workosAPIKey)
 
@@ -93,6 +113,7 @@ func New() (*Server, error) {
 		jwks:                  jwks,
 		workosClientID:        workosClientID,
 		apiKeyEncryptionKey:   apiKeyEncryptionKey,
+		probeCache:            &probeCache{recent: make(map[string]time.Time)},
 	}
 	s.addRoutes()
 	return s, nil

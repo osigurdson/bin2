@@ -56,7 +56,16 @@ func newRootCmd() *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(migrateCmd, cleanCmd)
+	seedE2ECmd := &cobra.Command{
+		Use:   "seed-e2e",
+		Short: "Seed a synthetic user, registry, and API key for end-to-end testing",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSeedE2E(cmd.Context())
+		},
+	}
+
+	cmd.AddCommand(migrateCmd, cleanCmd, seedE2ECmd)
 	return cmd
 }
 

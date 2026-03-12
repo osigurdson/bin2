@@ -24,7 +24,7 @@ tmux send-keys -t "$SESSION:dev.0" \
 	"cd \"$ROOT_DIR\" && export KUBECONFIG=\"$KUBECONFIG_PATH\" && set -a && source .env && source ui/.env.local && set +a && DEBUG=1 go run ./cmd/api" C-m
 
 tmux send-keys -t "$SESSION:dev.1" \
-	"cd \"$ROOT_DIR/ui2\" && export KUBECONFIG=\"$KUBECONFIG_PATH\" && NEXT_PUBLIC_API_BASE_URL=http://localhost:5000 npm run dev" C-m
+	"cd \"$ROOT_DIR/ui\" && export KUBECONFIG=\"$KUBECONFIG_PATH\" && NEXT_PUBLIC_API_BASE_URL=http://localhost:5000 npm run dev" C-m
 
 tmux new-window -t "$SESSION:" -n root
 tmux send-keys -t "$SESSION:root.0" \

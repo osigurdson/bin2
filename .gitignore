@@ -50,3 +50,8 @@ registry-data/
 
 .pushcount
 tests/.testenv
+tests/.cache/
+test-results/
+
+localhost+1-key.pem
+localhost+1.pem

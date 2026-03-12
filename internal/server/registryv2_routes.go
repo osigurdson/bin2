@@ -45,10 +45,14 @@ func (s *Server) v2Handler(c *gin.Context) {
 		}
 	}
 
-	if c.Request.Method == http.MethodPatch || c.Request.Method == http.MethodPut {
+	if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodPatch || c.Request.Method == http.MethodPut {
 		if m := reUploadChunk.FindStringSubmatch(relative); m != nil {
 			repo := m[1]
 			uuid := m[2]
+			if c.Request.Method == http.MethodGet {
+				s.getBlobUploadHandler(c, repo, uuid)
+				return
+			}
 			if c.Request.Method == http.MethodPatch {
 				s.patchBlobUploadHandler(c, repo, uuid)
 				return
@@ -58,24 +62,41 @@ func (s *Server) v2Handler(c *gin.Context) {
 		}
 	}
 
-	if c.Request.Method == http.MethodHead || c.Request.Method == http.MethodGet {
+	if c.Request.Method == http.MethodGet {
+		if m := reTagsList.FindStringSubmatch(relative); m != nil {
+			s.listTagsHandler(c, m[1])
+			return
+		}
+		if m := reReferrers.FindStringSubmatch(relative); m != nil {
+			s.listReferrersHandler(c, m[1], m[2])
+			return
+		}
+	}
+
+	if c.Request.Method == http.MethodHead || c.Request.Method == http.MethodGet || c.Request.Method == http.MethodDelete {
 		if m := reBlobPath.FindStringSubmatch(relative); m != nil {
 			if c.Request.Method == http.MethodHead {
 				s.headBlobHandler(c, m[1], m[2])
 				return
 			}
-			s.getBlobHandler(c, m[1], m[2])
+			if c.Request.Method == http.MethodGet {
+				s.getBlobHandler(c, m[1], m[2])
+				return
+			}
+			s.deleteBlobHandler(c, m[1], m[2])
 			return
 		}
 	}
 
-	if c.Request.Method == http.MethodPut || c.Request.Method == http.MethodHead || c.Request.Method == http.MethodGet {
+	if c.Request.Method == http.MethodPut || c.Request.Method == http.MethodHead || c.Request.Method == http.MethodGet || c.Request.Method == http.MethodDelete {
 		if m := reManifestRef.FindStringSubmatch(relative); m != nil {
 			switch c.Request.Method {
 			case http.MethodPut:
 				s.putManifestHandler(c, m[1], m[2])
 			case http.MethodHead:
 				s.headManifestHandler(c, m[1], m[2])
+			case http.MethodDelete:
+				s.deleteManifestHandler(c, m[1], m[2])
 			default:
 				s.getManifestHandler(c, m[1], m[2])
 			}

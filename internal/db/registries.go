@@ -230,19 +230,14 @@ func (d *DB) GetRegistryReferencedBlobBytesCached(ctx context.Context, registryI
 		return cachedSizeBytes, nil
 	}
 
-	const recomputeCmd = `SELECT COALESCE(SUM(b.size_bytes), 0)
-		FROM (
-			SELECT DISTINCT mb.blob_digest
-			FROM repositories r
-			JOIN manifest_refs mr
-			  ON mr.repository_id = r.id
-			JOIN manifest_blob_refs mb
-			  ON mb.repository_id = mr.repository_id
-			 AND mb.manifest_digest = mr.manifest_digest
+	const recomputeCmd = `SELECT COALESCE(SUM(size_bytes), 0)
+		FROM objects
+		WHERE digest IN (
+			SELECT DISTINCT ro.digest
+			FROM repository_objects ro
+			JOIN repositories r ON r.id = ro.repository_id
 			WHERE r.registry_id = $1
-		) referenced
-		JOIN blobs b
-		  ON b.digest = referenced.blob_digest`
+		)`
 
 	var computedSizeBytes int64
 	if err := tx.QueryRow(ctx, recomputeCmd, registryID).Scan(&computedSizeBytes); err != nil {
