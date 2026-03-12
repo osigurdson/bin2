@@ -113,6 +113,43 @@ func TestRegistryV2RootRejectsUnsupportedMethod(t *testing.T) {
 	}
 }
 
+func TestRegistryBlobDeleteDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	s := newRegistryV2RootTestServer(t)
+	token, _, _, err := s.issueRegistryToken("alpha", "registry.test", []registryTokenAccess{{
+		Type:    "repository",
+		Name:    "alpha/app",
+		Actions: []string{"push"},
+	}})
+	if err != nil {
+		t.Fatalf("issueRegistryToken: %v", err)
+	}
+
+	req := httptest.NewRequest(
+		http.MethodDelete,
+		"http://registry.test/v2/alpha/app/blobs/sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+		nil,
+	)
+	req.Header.Set("Authorization", "Bearer "+token)
+	res := httptest.NewRecorder()
+
+	s.router.ServeHTTP(res, req)
+
+	if res.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d", res.Code, http.StatusMethodNotAllowed)
+	}
+	if got := res.Header().Get("Docker-Distribution-API-Version"); got != "registry/2.0" {
+		t.Fatalf("Docker-Distribution-API-Version = %q", got)
+	}
+	if got := res.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	if !strings.Contains(res.Body.String(), `"code":"UNSUPPORTED"`) {
+		t.Fatalf("body = %q", res.Body.String())
+	}
+}
+
 func newRegistryV2RootTestServer(t *testing.T) *Server {
 	t.Helper()
 
