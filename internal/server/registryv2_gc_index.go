@@ -18,20 +18,18 @@ func (s *Server) trackRegistryBlobDigest(ctx context.Context, digest string, siz
 	if digest == "" {
 		return nil
 	}
-	return s.db.UpsertRegistryBlob(ctx, digest, sizeBytes)
+	return s.db.UpsertObjectBlob(ctx, digest, sizeBytes)
 }
 
 func (s *Server) trackedRegistryBlobSize(ctx context.Context, digest string) (int64, bool, error) {
 	if s.db == nil {
 		return 0, false, nil
 	}
-
 	digest = strings.TrimSpace(digest)
 	if digest == "" {
 		return 0, false, nil
 	}
-
-	size, err := s.db.GetRegistryBlobSize(ctx, digest)
+	size, err := s.db.GetObjectSize(ctx, digest)
 	if errors.Is(err, db.ErrNotFound) {
 		return 0, false, nil
 	}
@@ -41,6 +39,18 @@ func (s *Server) trackedRegistryBlobSize(ctx context.Context, digest string) (in
 	return size, true, nil
 }
 
+func (s *Server) noteObjectExistenceCheck(ctx context.Context, digest string) {
+	if s.db == nil {
+		return
+	}
+	if !s.probeCache.shouldUpdate(digest) {
+		return
+	}
+	if err := s.db.NoteObjectExistenceCheck(ctx, digest); err != nil {
+		logError(fmt.Errorf("could not note existence check for %s: %w", digest, err))
+	}
+}
+
 func (s *Server) indexRegistryManifest(
 	ctx context.Context,
 	registryID uuid.UUID,
@@ -48,23 +58,32 @@ func (s *Server) indexRegistryManifest(
 	manifestDigest string,
 	manifestBytes []byte,
 	contentType string,
-	references []string,
+	tag string,
 	blobDigests []string,
+	childManifestDigests []string,
+	subjectDigest string,
 ) error {
 	if s.db == nil {
 		return nil
 	}
 
-	args := db.UpsertRegistryManifestIndexArgs{
-		RegistryID:     registryID,
-		Repository:     strings.TrimSpace(repo),
-		ManifestDigest: strings.TrimSpace(manifestDigest),
-		ManifestBody:   manifestBytes,
-		ContentType:    strings.TrimSpace(contentType),
-		References:     references,
-		BlobDigests:    blobDigests,
+	objectType := "manifest"
+	if len(childManifestDigests) > 0 {
+		objectType = "manifest_index"
 	}
-	return s.db.UpsertRegistryManifestIndex(ctx, args)
+
+	return s.db.UpsertManifest(ctx, db.UpsertManifestArgs{
+		RegistryID:           registryID,
+		Repository:           strings.TrimSpace(repo),
+		ManifestDigest:       strings.TrimSpace(manifestDigest),
+		ManifestBody:         manifestBytes,
+		ContentType:          strings.TrimSpace(contentType),
+		ObjectType:           objectType,
+		Tag:                  strings.TrimSpace(tag),
+		BlobDigests:          blobDigests,
+		ChildManifestDigests: childManifestDigests,
+		SubjectDigest:        strings.TrimSpace(subjectDigest),
+	})
 }
 
 func (s *Server) resolveRegistryIDForRepo(ctx context.Context, auth registryAuthContext, repo string) (uuid.UUID, error) {

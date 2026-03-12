@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"bin2.io/internal/db"
 	"github.com/gin-gonic/gin"
 )
 
@@ -212,22 +213,20 @@ func (s *Server) mountBlobHandler(c *gin.Context, repo, mountDigest, fromRepo st
 		return
 	}
 
-	if fromRepo != "" {
-		size, err := s.registryStorage.BlobSize(c.Request.Context(), digestHex)
-		if err == nil {
-			digest := "sha256:" + digestHex
-			if err := s.trackRegistryBlobDigest(c.Request.Context(), digest, size); err != nil {
-				logError(fmt.Errorf("could not update registry blob index for %s: %w", digest, err))
-			}
-			c.Header("Location", fmt.Sprintf("/v2/%s/blobs/%s", repo, digest))
-			c.Header("Docker-Content-Digest", digest)
-			c.Status(http.StatusCreated)
-			return
+	size, err := s.registryStorage.BlobSize(c.Request.Context(), digestHex)
+	if err == nil {
+		digest := "sha256:" + digestHex
+		if err := s.trackRegistryBlobDigest(c.Request.Context(), digest, size); err != nil {
+			logError(fmt.Errorf("could not update registry blob index for %s: %w", digest, err))
 		}
-		if !errors.Is(err, ErrBlobNotFound) {
-			writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to check blob mount source")
-			return
-		}
+		c.Header("Location", fmt.Sprintf("/v2/%s/blobs/%s", repo, digest))
+		c.Header("Docker-Content-Digest", digest)
+		c.Status(http.StatusCreated)
+		return
+	}
+	if !errors.Is(err, ErrBlobNotFound) {
+		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to check blob mount source")
+		return
 	}
 
 	uuid, err := newUUID()
@@ -310,8 +309,25 @@ func (s *Server) headBlobHandler(c *gin.Context, repo, digest string) {
 		return
 	}
 
-	size, err := s.registryStorage.BlobSize(c.Request.Context(), digestHex)
-	if errors.Is(err, ErrBlobNotFound) {
+	auth, err := s.getRegistryAuth(c)
+	if err != nil {
+		writeOCIError(c, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
+		return
+	}
+
+	registryID, err := s.resolveRegistryIDForRepo(c.Request.Context(), auth, repo)
+	if err != nil {
+		if errors.Is(err, errUnauthorized) {
+			writeOCIError(c, http.StatusForbidden, "DENIED", "access denied to this repository")
+			return
+		}
+		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to resolve registry")
+		return
+	}
+
+	normalizedDigest := "sha256:" + digestHex
+	size, err := s.db.GetRepositoryObjectSize(c.Request.Context(), registryID, repoLeaf(repo), normalizedDigest)
+	if errors.Is(err, db.ErrNotFound) {
 		writeOCIError(c, http.StatusNotFound, "BLOB_UNKNOWN", "blob not found")
 		return
 	}
@@ -320,7 +336,9 @@ func (s *Server) headBlobHandler(c *gin.Context, repo, digest string) {
 		return
 	}
 
-	c.Header("Docker-Content-Digest", "sha256:"+digestHex)
+	s.noteObjectExistenceCheck(c.Request.Context(), normalizedDigest)
+
+	c.Header("Docker-Content-Digest", normalizedDigest)
 	c.Header("Content-Length", fmt.Sprintf("%d", size))
 	c.Status(http.StatusOK)
 }

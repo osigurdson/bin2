@@ -103,6 +103,7 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 		}
 	}
 
+	normalizedChildManifestDigests := make([]string, 0, len(childManifestDigests))
 	seenManifestDigests := make(map[string]struct{}, len(childManifestDigests))
 	for _, childManifestDigest := range childManifestDigests {
 		if s.db == nil {
@@ -128,16 +129,18 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 			return
 		}
 		seenManifestDigests[normalizedDigest] = struct{}{}
+		normalizedChildManifestDigests = append(normalizedChildManifestDigests, normalizedDigest)
 	}
 
 	sum := sha256.Sum256(manifestBytes)
 	manifestDigest := "sha256:" + hex.EncodeToString(sum[:])
 
-	contentType := manifestContentType(c.GetHeader("Content-Type"))
-	references := []string{reference}
+	tag := ""
 	if reference != manifestDigest {
-		references = append(references, manifestDigest)
+		tag = reference
 	}
+
+	contentType := manifestContentType(c.GetHeader("Content-Type"))
 	if err := s.indexRegistryManifest(
 		c.Request.Context(),
 		registryID,
@@ -145,8 +148,10 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 		manifestDigest,
 		manifestBytes,
 		contentType,
-		references,
+		tag,
 		normalizedBlobDigests,
+		normalizedChildManifestDigests,
+		subjectDigest,
 	); err != nil {
 		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to store manifest")
 		return
