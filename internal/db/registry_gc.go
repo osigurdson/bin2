@@ -359,10 +359,13 @@ func (d *DB) DeleteManifestByDigestInRepository(
 	// Guard: refuse to delete a manifest that is a child of another manifest
 	// still present in this repository (e.g. a platform manifest inside an index).
 	// The caller must delete the parent index first.
+	// We deliberately exclude is_subject edges: those are OCI referrer relationships
+	// (an artifact pointing AT a subject) and do NOT block deletion of the subject.
 	const checkParentCmd = `SELECT EXISTS (
 		SELECT 1 FROM graph g
 		JOIN repository_objects ro ON ro.digest = g.parent_digest
 		WHERE g.child_digest = $1 AND ro.repository_id = $2
+		  AND g.is_subject = false
 	)`
 	var hasParent bool
 	if err := tx.QueryRow(ctx, checkParentCmd, manifestDigest, repositoryID).Scan(&hasParent); err != nil {
