@@ -10,6 +10,38 @@ import (
 	"github.com/google/uuid"
 )
 
+// resolveTenantID returns the registryID and tenantID for a repository path.
+// It uses the auth context if registryID is already known, otherwise resolves
+// by registry name.
+func (s *Server) resolveTenantID(ctx context.Context, auth registryAuthContext, repo string) (registryID, tenantID uuid.UUID, err error) {
+	registryID, err = s.resolveRegistryIDForRepo(ctx, auth, repo)
+	if err != nil {
+		return
+	}
+	tenantID, err = s.db.GetRegistryTenantID(ctx, registryID)
+	return
+}
+
+// emitUsageEvent inserts a single usage event, logging but not propagating any error.
+func (s *Server) emitUsageEvent(ctx context.Context, tenantID, registryID uuid.UUID, repoID *uuid.UUID, metric string, value int64) {
+	if s.db == nil || tenantID == uuid.Nil {
+		return
+	}
+	event := db.UsageEvent{
+		ID:       uuid.New(),
+		TenantID: tenantID,
+		Metric:   metric,
+		Value:    value,
+	}
+	if registryID != uuid.Nil {
+		event.RegistryID = &registryID
+	}
+	event.RepoID = repoID
+	if err := s.db.InsertUsageEvents(ctx, []db.UsageEvent{event}); err != nil {
+		logError(fmt.Errorf("emitUsageEvent %s: %w", metric, err))
+	}
+}
+
 func (s *Server) trackRegistryBlobDigest(ctx context.Context, digest string, sizeBytes int64) error {
 	if s.db == nil {
 		return nil

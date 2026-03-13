@@ -8,6 +8,7 @@ import (
 
 	"bin2.io/internal/db"
 	"github.com/gin-gonic/gin"
+	guuid "github.com/google/uuid"
 )
 
 func (s *Server) startBlobUploadHandler(c *gin.Context, repo string) {
@@ -219,6 +220,21 @@ func (s *Server) mountBlobHandler(c *gin.Context, repo, mountDigest, fromRepo st
 		if err := s.trackRegistryBlobDigest(c.Request.Context(), digest, size); err != nil {
 			logError(fmt.Errorf("could not update registry blob index for %s: %w", digest, err))
 		}
+		// Billing: emit push-op-count if tenant doesn't already own this blob.
+		if auth, authErr := s.getRegistryAuth(c); authErr == nil {
+			if _, tenantID, tenantErr := s.resolveTenantID(c.Request.Context(), auth, repo); tenantErr == nil {
+				if has, _ := s.db.TenantHasBlob(c.Request.Context(), tenantID, digest); !has {
+					opCount := int64(1)
+					if size > 0 {
+						opCount = (size + 100*1024*1024 - 1) / (100 * 1024 * 1024)
+						if opCount < 1 {
+							opCount = 1
+						}
+					}
+					s.emitUsageEvent(c.Request.Context(), tenantID, auth.registryID, nil, db.MetricPushOpCount, opCount)
+				}
+			}
+		}
 		c.Header("Location", fmt.Sprintf("/v2/%s/blobs/%s", repo, digest))
 		c.Header("Docker-Content-Digest", digest)
 		c.Status(http.StatusCreated)
@@ -259,6 +275,12 @@ func (s *Server) completeBlobUpload(c *gin.Context, repo, uuid, digestHex string
 	}
 
 	digest := "sha256:" + digestHex
+
+	// Resolve tenant for billing. Errors are non-fatal for the upload itself.
+	auth, _ := s.getRegistryAuth(c)
+	registryID, tenantID, _ := s.resolveTenantID(c.Request.Context(), auth, repo)
+	tenantHasBlob, _ := s.db.TenantHasBlob(c.Request.Context(), tenantID, digest)
+
 	size, exists, err := s.trackedRegistryBlobSize(c.Request.Context(), digest)
 	if err != nil {
 		logError(fmt.Errorf("could not read registry blob index for %s: %w", digest, err))
@@ -267,6 +289,16 @@ func (s *Server) completeBlobUpload(c *gin.Context, repo, uuid, digestHex string
 		_ = s.registryStorage.DeleteUpload(c.Request.Context(), uuid)
 		if err := s.trackRegistryBlobDigest(c.Request.Context(), digest, size); err != nil {
 			logError(fmt.Errorf("could not update registry blob index for %s: %w", digest, err))
+		}
+		if !tenantHasBlob && tenantID != guuid.Nil {
+			opCount := int64(1)
+			if size > 0 {
+				opCount = (size + 100*1024*1024 - 1) / (100 * 1024 * 1024)
+				if opCount < 1 {
+					opCount = 1
+				}
+			}
+			s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, db.MetricPushOpCount, opCount)
 		}
 		c.Header("Location", fmt.Sprintf("/v2/%s/blobs/%s", repo, digest))
 		c.Header("Docker-Content-Digest", digest)
@@ -281,6 +313,16 @@ func (s *Server) completeBlobUpload(c *gin.Context, repo, uuid, digestHex string
 	}
 	if err := s.trackRegistryBlobDigest(c.Request.Context(), digest, size); err != nil {
 		logError(fmt.Errorf("could not update registry blob index for %s: %w", digest, err))
+	}
+	if !tenantHasBlob && tenantID != guuid.Nil {
+		opCount := int64(1)
+		if size > 0 {
+			opCount = (size + 100*1024*1024 - 1) / (100 * 1024 * 1024)
+			if opCount < 1 {
+				opCount = 1
+			}
+		}
+		s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, db.MetricPushOpCount, opCount)
 	}
 
 	c.Header("Location", fmt.Sprintf("/v2/%s/blobs/%s", repo, digest))
@@ -368,6 +410,13 @@ func (s *Server) getBlobHandler(c *gin.Context, repo, digest string) {
 		return
 	}
 	defer body.Close()
+
+	// Emit pull-op-count for direct (non-worker) blob pulls.
+	if auth, authErr := s.getRegistryAuth(c); authErr == nil {
+		if _, tenantID, tenantErr := s.resolveTenantID(c.Request.Context(), auth, repo); tenantErr == nil {
+			s.emitUsageEvent(c.Request.Context(), tenantID, auth.registryID, nil, db.MetricPullOpCount, 10)
+		}
+	}
 
 	c.Header("Docker-Content-Digest", "sha256:"+digestHex)
 	c.DataFromReader(http.StatusOK, size, defaultBlobContentType, body, nil)

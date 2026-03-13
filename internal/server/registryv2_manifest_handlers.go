@@ -10,6 +10,7 @@ import (
 
 	"bin2.io/internal/db"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
@@ -68,6 +69,12 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 		return
 	}
 
+	tenantID, err := s.db.GetRegistryTenantID(c.Request.Context(), registryID)
+	if err != nil {
+		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to resolve tenant")
+		return
+	}
+
 	normalizedBlobDigests := make([]string, 0, len(blobDigests))
 	seenBlobDigests := make(map[string]struct{}, len(blobDigests))
 	blobSizes := make(map[string]int64, len(blobDigests))
@@ -94,6 +101,19 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 		seenBlobDigests[normalizedDigest] = struct{}{}
 		normalizedBlobDigests = append(normalizedBlobDigests, normalizedDigest)
 		blobSizes[normalizedDigest] = size
+	}
+
+	// Determine which blobs are new to this tenant (before UpsertManifest adds them).
+	newBlobDigests := make([]string, 0, len(normalizedBlobDigests))
+	for _, blobDigest := range normalizedBlobDigests {
+		has, err := s.db.TenantHasBlob(c.Request.Context(), tenantID, blobDigest)
+		if err != nil {
+			logError(fmt.Errorf("TenantHasBlob: %w", err))
+			continue
+		}
+		if !has {
+			newBlobDigests = append(newBlobDigests, blobDigest)
+		}
 	}
 
 	for _, blobDigest := range normalizedBlobDigests {
@@ -157,6 +177,12 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 		return
 	}
 
+	// Emit storage-bytes for newly acquired blobs, plus push-op-count for the manifest.
+	for _, blobDigest := range newBlobDigests {
+		s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, db.MetricStorageBytes, blobSizes[blobDigest])
+	}
+	s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, db.MetricPushOpCount, 1)
+
 	c.Header("Docker-Content-Digest", manifestDigest)
 	if subjectDigest != "" {
 		c.Header("OCI-Subject", subjectDigest)
@@ -219,25 +245,46 @@ func (s *Server) deleteManifestHandler(c *gin.Context, repo, reference string) {
 		return
 	}
 
+	tenantID, tenantErr := s.db.GetRegistryTenantID(c.Request.Context(), registryID)
+	if tenantErr != nil {
+		logError(fmt.Errorf("GetRegistryTenantID: %w", tenantErr))
+		tenantID = uuid.Nil
+	}
+
 	var deleted bool
+	var deleteErr error
 	if digestHex, err := parseDigest(reference); err == nil {
-		deleted, err = s.db.DeleteManifestByDigestInRepository(
+		var orphaned []db.DeletedBlobInfo
+		deleted, orphaned, deleteErr = s.db.DeleteManifestByDigestInRepository(
 			c.Request.Context(),
 			registryID,
+			tenantID,
 			repoLeaf(repo),
 			"sha256:"+digestHex,
 		)
+		if deleteErr != nil {
+			if errors.Is(deleteErr, db.ErrManifestHasParent) {
+				writeOCIError(c, http.StatusConflict, "MANIFEST_REFERENCED", "manifest is referenced by an index; delete the index first")
+				return
+			}
+			writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to delete manifest")
+			return
+		}
+		// Emit negative storage-bytes for blobs now orphaned at tenant level.
+		for _, blob := range orphaned {
+			s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, db.MetricStorageBytes, -blob.SizeBytes)
+		}
 	} else {
-		deleted, err = s.db.DeleteManifestReference(
+		deleted, deleteErr = s.db.DeleteManifestReference(
 			c.Request.Context(),
 			registryID,
 			repoLeaf(repo),
 			reference,
 		)
-	}
-	if err != nil {
-		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to delete manifest")
-		return
+		if deleteErr != nil {
+			writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to delete manifest")
+			return
+		}
 	}
 	if !deleted {
 		c.Status(http.StatusNotFound)
