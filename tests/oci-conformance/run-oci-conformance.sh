@@ -150,17 +150,10 @@ cd "${REPO_ROOT}"
 
 check_usage_events() {
   local registry_url="$1"
-  local namespace="$2"
-  local username="$3"
-  local password="$4"
+  local username="$2"
+  local password="$3"
 
   printf '\nChecking usage events...\n'
-
-  # Get a registry bearer token using the API key credentials.
-  local token_url
-  token_url=$(curl -sf -o /dev/null -w '%{redirect_url}' \
-    -u "${username}:${password}" \
-    "${registry_url}/v2/token?service=${registry_url##*/}&scope=" 2>/dev/null || true)
 
   local token_resp
   token_resp=$(curl -sf \
@@ -168,68 +161,72 @@ check_usage_events() {
     "${registry_url}/v2/token?service=${registry_url##*/}&scope=" 2>/dev/null || echo '{}')
 
   local token
-  token=$(echo "${token_resp}" | grep -o '"token":"[^"]*"' | cut -d'"' -f4 || true)
+  token=$(printf '%s' "${token_resp}" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+print(data.get('token', ''))
+" 2>/dev/null || true)
 
   if [[ -z "${token}" ]]; then
-    printf 'WARNING: could not obtain bearer token for usage event check, skipping\n'
-    return 0
+    printf 'FAIL: could not obtain bearer token for usage event check\n' >&2
+    return 1
   fi
-
-  local base_url="${registry_url%/v2*}"
-  base_url="${base_url%%/v2*}"
-  # If registry_url doesn't have /v2, just use it as-is
-  [[ "${registry_url}" == */v2* ]] || base_url="${registry_url}"
 
   local events
   events=$(curl -sf \
     -H "Authorization: Bearer ${token}" \
-    "${base_url}/api/v1/usage/events?limit=500" 2>/dev/null || echo '[]')
+    "${registry_url}/api/v1/usage/events?limit=500" 2>/dev/null || echo 'curl_failed')
 
-  local storage_sum push_count pull_count neg_count
-  storage_sum=$(printf '%s' "${events}" | python3 -c "
+  if [[ "${events}" == "curl_failed" ]]; then
+    printf 'FAIL: could not fetch usage events\n' >&2
+    return 1
+  fi
+
+  local pos_storage_count push_total pull_total neg_count
+  pos_storage_count=$(printf '%s' "${events}" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
-print(sum(e['value'] for e in data if e['metric'] == 'storage-bytes'))
-" 2>/dev/null || echo 0)
+print(sum(1 for e in data if e['metric'] == 'storage-bytes' and e['value'] > 0))
+")
 
-  push_count=$(printf '%s' "${events}" | python3 -c "
+  push_total=$(printf '%s' "${events}" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
-print(sum(1 for e in data if e['metric'] == 'push-op-count'))
-" 2>/dev/null || echo 0)
+print(sum(e['value'] for e in data if e['metric'] == 'push-op-count'))
+")
 
-  pull_count=$(printf '%s' "${events}" | python3 -c "
+  pull_total=$(printf '%s' "${events}" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
-print(sum(1 for e in data if e['metric'] == 'pull-op-count'))
-" 2>/dev/null || echo 0)
+print(sum(e['value'] for e in data if e['metric'] == 'pull-op-count'))
+")
 
   neg_count=$(printf '%s' "${events}" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 print(sum(1 for e in data if e['metric'] == 'storage-bytes' and e['value'] < 0))
-" 2>/dev/null || echo 0)
+")
 
   local failed=0
 
-  if [[ "${storage_sum}" -gt 0 ]]; then
-    printf '  storage-bytes net sum: %s [OK]\n' "${storage_sum}"
+  if [[ "${pos_storage_count}" -gt 0 ]]; then
+    printf '  positive storage-bytes events: %s [OK]\n' "${pos_storage_count}"
   else
-    printf '  FAIL: expected positive net storage bytes, got %s\n' "${storage_sum}"
+    printf '  FAIL: expected positive storage-bytes events, got 0\n'
     failed=1
   fi
 
-  if [[ "${push_count}" -gt 0 ]]; then
-    printf '  push-op-count events: %s [OK]\n' "${push_count}"
+  if [[ "${push_total}" -gt 0 ]]; then
+    printf '  push-op-count total value: %s [OK]\n' "${push_total}"
   else
-    printf '  FAIL: expected push-op-count events, got 0\n'
+    printf '  FAIL: expected push-op-count total value > 0, got %s\n' "${push_total}"
     failed=1
   fi
 
-  if [[ "${pull_count}" -gt 0 ]]; then
-    printf '  pull-op-count events: %s [OK]\n' "${pull_count}"
+  if [[ "${pull_total}" -gt 0 ]]; then
+    printf '  pull-op-count total value: %s [OK]\n' "${pull_total}"
   else
-    printf '  FAIL: expected pull-op-count events, got 0\n'
+    printf '  FAIL: expected pull-op-count total value > 0, got %s\n' "${pull_total}"
     failed=1
   fi
 
@@ -248,4 +245,4 @@ print(sum(1 for e in data if e['metric'] == 'storage-bytes' and e['value'] < 0))
   printf 'Usage event assertions PASSED\n'
 }
 
-check_usage_events "${OCI_ROOT_URL}" "${OCI_NAMESPACE}" "${OCI_USERNAME}" "${OCI_PASSWORD}"
+check_usage_events "${OCI_ROOT_URL}" "${OCI_USERNAME}" "${OCI_PASSWORD}"

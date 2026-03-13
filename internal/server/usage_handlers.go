@@ -69,21 +69,27 @@ func (s *Server) listUsageEventsHandler(c *gin.Context) {
 }
 
 // ingestUsageEventsHandler handles POST /api/v1/usage/events.
-// Used by the CF worker to push pull-op-count events. Requires a valid
-// registry bearer token; events are scoped to that token's registry.
+// Used by the CF worker to push pull-op-count events. Requires the
+// USAGE_INGEST_SECRET shared secret; this endpoint is not accessible to
+// end-user registry tokens.
 func (s *Server) ingestUsageEventsHandler(c *gin.Context) {
-	tenantID, registryID, err := s.resolveUsageAuth(c)
-	if err != nil {
+	authHeader := strings.TrimSpace(c.GetHeader("Authorization"))
+	secret := ""
+	if len(authHeader) > 7 && strings.EqualFold(authHeader[:7], "bearer ") {
+		secret = strings.TrimSpace(authHeader[7:])
+	}
+	if secret == "" || secret != s.usageIngestSecret {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 
 	type ingestRequest struct {
-		ID     string `json:"id"`
-		RepoID string `json:"repoId"`
-		Digest string `json:"digest"`
-		Metric string `json:"metric"`
-		Value  int64  `json:"value"`
+		Namespace string `json:"namespace"`
+		ID        string `json:"id"`
+		RepoID    string `json:"repoId"`
+		Digest    string `json:"digest"`
+		Metric    string `json:"metric"`
+		Value     int64  `json:"value"`
 	}
 
 	var body []ingestRequest
@@ -94,6 +100,16 @@ func (s *Server) ingestUsageEventsHandler(c *gin.Context) {
 
 	events := make([]db.UsageEvent, 0, len(body))
 	for _, req := range body {
+		namespace := strings.TrimSpace(req.Namespace)
+		if namespace == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "namespace is required"})
+			return
+		}
+		reg, err := s.db.GetRegistryByName(c.Request.Context(), namespace)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "unknown namespace: " + namespace})
+			return
+		}
 		id, err := uuid.Parse(req.ID)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid event id: " + req.ID})
@@ -109,14 +125,12 @@ func (s *Server) ingestUsageEventsHandler(c *gin.Context) {
 			return
 		}
 		event := db.UsageEvent{
-			ID:       id,
-			TenantID: tenantID,
-			Digest:   digest,
-			Metric:   req.Metric,
-			Value:    req.Value,
-		}
-		if registryID != uuid.Nil {
-			event.RegistryID = &registryID
+			ID:         id,
+			TenantID:   reg.TenantID,
+			RegistryID: &reg.ID,
+			Digest:     digest,
+			Metric:     req.Metric,
+			Value:      req.Value,
 		}
 		if req.RepoID != "" {
 			if repoID, err := uuid.Parse(req.RepoID); err == nil {

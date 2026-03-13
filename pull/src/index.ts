@@ -19,6 +19,7 @@ type Env = {
   REGISTRY_TOKEN_REALM?: string;
   REGISTRY_JWKS_URL?: string;
   REGISTRY_API_ORIGIN?: string;
+  USAGE_INGEST_SECRET?: string;
 };
 
 type RegistryTokenAccess = {
@@ -32,7 +33,7 @@ type JWKSResolver = ReturnType<typeof createRemoteJWKSet>;
 const jwksCache = new Map<string, JWKSResolver>();
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
 
@@ -65,7 +66,7 @@ export default {
           "endpoint not implemented",
         );
       }
-      return handleBlob(request, env, blobMatch[1], blobMatch[2]);
+      return handleBlob(request, env, ctx, blobMatch[1], blobMatch[2]);
     }
 
     return ociError(
@@ -185,6 +186,7 @@ async function handleManifest(
 async function handleBlob(
   request: Request,
   env: Env,
+  ctx: ExecutionContext,
   repo: string,
   digest: string,
 ): Promise<Response> {
@@ -231,10 +233,46 @@ async function handleBlob(
     });
   }
 
+  ctx.waitUntil(postPullUsageEvent(env, auth.namespace, `sha256:${digestHex}`));
+
   return new Response(object.body, {
     status: 200,
     headers,
   });
+}
+
+async function postPullUsageEvent(
+  env: Env,
+  namespace: string,
+  digest: string,
+): Promise<void> {
+  const secret = (env.USAGE_INGEST_SECRET ?? "").trim();
+  if (secret === "") {
+    console.error("usage event POST skipped: USAGE_INGEST_SECRET not configured");
+    return;
+  }
+  const url = `${apiOrigin(env)}/api/v1/usage/events`;
+  try {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${secret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify([{
+        namespace,
+        id: crypto.randomUUID(),
+        digest,
+        metric: "pull-op-count",
+        value: 1,
+      }]),
+    });
+    if (!resp.ok) {
+      console.error(`usage event POST failed: ${resp.status}`);
+    }
+  } catch (err) {
+    console.error("usage event POST threw:", err);
+  }
 }
 
 async function authenticate(
