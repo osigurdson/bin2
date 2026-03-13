@@ -388,56 +388,108 @@ func (d *DB) DeleteManifestByDigestInRepository(
 		return false, nil, err
 	}
 
-	// Reachability sweep: delete every object in this repository that is no
-	// longer reachable from any remaining tag. This removes the manifest itself
-	// plus any child manifests or blobs that have no other path from a tag.
-	const sweepCmd = `WITH RECURSIVE reachable AS (
-		SELECT digest FROM tags WHERE repository_id = $1
-		UNION
+	// Delete the manifest itself from repository_objects.
+	const deleteManifestCmd = `DELETE FROM repository_objects WHERE repository_id = $1 AND digest = $2`
+	if _, err := tx.Exec(ctx, deleteManifestCmd, repositoryID, manifestDigest); err != nil {
+		return false, nil, err
+	}
+
+	// Delete any child manifests (e.g. platform images inside a manifest index)
+	// that now have no other parent remaining in this repository. We only go one
+	// level deep since the OCI spec does not nest manifest indexes.
+	const deleteOrphanChildManifestsCmd = `DELETE FROM repository_objects
+	WHERE repository_id = $1
+	  AND digest IN (
 		SELECT g.child_digest
 		FROM graph g
-		JOIN reachable r ON r.digest = g.parent_digest
-	)
-	DELETE FROM repository_objects
-	WHERE repository_id = $1
-	  AND digest NOT IN (SELECT digest FROM reachable)
+		JOIN objects o ON o.digest = g.child_digest
+		WHERE g.parent_digest = $2
+		  AND o.type IN ('manifest', 'manifest_index')
+		  AND NOT EXISTS (
+			SELECT 1 FROM graph g2
+			JOIN repository_objects ro2 ON ro2.digest = g2.parent_digest
+			WHERE g2.child_digest = g.child_digest
+			  AND ro2.repository_id = $1
+		  )
+	  )
 	RETURNING digest`
 
-	rows, err := tx.Query(ctx, sweepCmd, repositoryID)
+	childRows, err := tx.Query(ctx, deleteOrphanChildManifestsCmd, repositoryID, manifestDigest)
 	if err != nil {
 		return false, nil, err
 	}
-	var removedDigests []string
-	for rows.Next() {
+	deletedManifestDigests := []string{manifestDigest}
+	for childRows.Next() {
 		var d string
-		if err := rows.Scan(&d); err != nil {
-			rows.Close()
+		if err := childRows.Scan(&d); err != nil {
+			childRows.Close()
 			return false, nil, err
 		}
-		removedDigests = append(removedDigests, d)
+		deletedManifestDigests = append(deletedManifestDigests, d)
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+	childRows.Close()
+	if err := childRows.Err(); err != nil {
 		return false, nil, err
 	}
 
-	if len(removedDigests) == 0 {
-		return false, nil, nil
+	// Remove blobs from repository_objects for this repo when they were
+	// children of the deleted manifests and are no longer referenced by any
+	// surviving manifest in this repository. Leave them for global GC otherwise.
+	const deleteBlobsCmd = `DELETE FROM repository_objects
+	WHERE repository_id = $1
+	  AND digest IN (
+		SELECT g.child_digest
+		FROM graph g
+		JOIN objects o ON o.digest = g.child_digest
+		WHERE g.parent_digest = ANY($2)
+		  AND o.type = 'blob'
+	  )
+	  AND NOT EXISTS (
+		SELECT 1 FROM graph g2
+		JOIN repository_objects ro2 ON ro2.digest = g2.parent_digest
+		WHERE g2.child_digest = repository_objects.digest
+		  AND ro2.repository_id = $1
+	  )
+	RETURNING digest`
+
+	blobRows, err := tx.Query(ctx, deleteBlobsCmd, repositoryID, deletedManifestDigests)
+	if err != nil {
+		return false, nil, err
+	}
+	var removedBlobDigests []string
+	for blobRows.Next() {
+		var d string
+		if err := blobRows.Scan(&d); err != nil {
+			blobRows.Close()
+			return false, nil, err
+		}
+		removedBlobDigests = append(removedBlobDigests, d)
+	}
+	blobRows.Close()
+	if err := blobRows.Err(); err != nil {
+		return false, nil, err
 	}
 
-	// Among removed digests, find blobs that are now orphaned at the tenant
+	if len(removedBlobDigests) == 0 {
+		// Committed with manifest removed but no blobs orphaned at tenant level.
+		if err := tx.Commit(ctx); err != nil {
+			return false, nil, err
+		}
+		return true, nil, nil
+	}
+
+	// Among blobs removed from this repo, find those now orphaned at the tenant
 	// level (not referenced by any other repository belonging to this tenant).
 	const tenantOrphanCmd = `SELECT o.digest, o.size_bytes
 		FROM objects o
 		WHERE o.digest = ANY($1)
-		  AND o.type = 'blob'
 		  AND NOT EXISTS (
 			SELECT 1 FROM repository_objects ro2
 			JOIN repositories r2  ON ro2.repository_id = r2.id
 			JOIN registries   reg ON r2.registry_id    = reg.id
 			WHERE ro2.digest = o.digest AND reg.tenant_id = $2
 		  )`
-	orphanRows, err := tx.Query(ctx, tenantOrphanCmd, removedDigests, tenantID)
+	orphanRows, err := tx.Query(ctx, tenantOrphanCmd, removedBlobDigests, tenantID)
 	if err != nil {
 		return false, nil, err
 	}
