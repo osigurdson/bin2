@@ -328,37 +328,137 @@ func (d *DB) DeleteManifestReference(ctx context.Context, registryID uuid.UUID, 
 	return true, tx.Commit(ctx)
 }
 
-func (d *DB) DeleteManifestByDigestInRepository(ctx context.Context, registryID uuid.UUID, repository, manifestDigest string) (bool, error) {
+type DeletedBlobInfo struct {
+	Digest    string
+	SizeBytes int64
+}
+
+func (d *DB) DeleteManifestByDigestInRepository(
+	ctx context.Context,
+	registryID uuid.UUID,
+	tenantID uuid.UUID,
+	repository string,
+	manifestDigest string,
+) (deleted bool, orphanedBlobs []DeletedBlobInfo, err error) {
 	tx, err := d.conn.Begin(ctx)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	defer tx.Rollback(ctx)
 
 	repositoryID, err := lookupRepositoryID(ctx, tx, registryID, repository)
 	if err != nil {
 		if err == ErrNotFound {
-			return false, nil
+			return false, nil, nil
 		}
-		return false, err
+		return false, nil, err
 	}
 
 	manifestDigest = strings.TrimSpace(manifestDigest)
 
-	const deleteTagsCmd = `DELETE FROM tags WHERE repository_id = $1 AND digest = $2`
-	if _, err := tx.Exec(ctx, deleteTagsCmd, repositoryID, manifestDigest); err != nil {
-		return false, err
+	// Guard: refuse to delete a manifest that is a child of another manifest
+	// still present in this repository (e.g. a platform manifest inside an index).
+	// The caller must delete the parent index first.
+	const checkParentCmd = `SELECT EXISTS (
+		SELECT 1 FROM graph g
+		JOIN repository_objects ro ON ro.digest = g.parent_digest
+		WHERE g.child_digest = $1 AND ro.repository_id = $2
+	)`
+	var hasParent bool
+	if err := tx.QueryRow(ctx, checkParentCmd, manifestDigest, repositoryID).Scan(&hasParent); err != nil {
+		return false, nil, err
+	}
+	if hasParent {
+		return false, nil, ErrManifestHasParent
 	}
 
-	const deleteRepoObjCmd = `DELETE FROM repository_objects WHERE repository_id = $1 AND digest = $2`
-	result, err := tx.Exec(ctx, deleteRepoObjCmd, repositoryID, manifestDigest)
+	// Verify the manifest is actually present in this repository.
+	const checkPresentCmd = `SELECT 1 FROM repository_objects WHERE repository_id = $1 AND digest = $2`
+	var dummy int
+	if err := tx.QueryRow(ctx, checkPresentCmd, repositoryID, manifestDigest).Scan(&dummy); err != nil {
+		if isNoRows(err) {
+			return false, nil, nil
+		}
+		return false, nil, err
+	}
+
+	// Remove all tags pointing to this manifest digest.
+	const deleteTagsCmd = `DELETE FROM tags WHERE repository_id = $1 AND digest = $2`
+	if _, err := tx.Exec(ctx, deleteTagsCmd, repositoryID, manifestDigest); err != nil {
+		return false, nil, err
+	}
+
+	// Reachability sweep: delete every object in this repository that is no
+	// longer reachable from any remaining tag. This removes the manifest itself
+	// plus any child manifests or blobs that have no other path from a tag.
+	const sweepCmd = `WITH RECURSIVE reachable AS (
+		SELECT digest FROM tags WHERE repository_id = $1
+		UNION
+		SELECT g.child_digest
+		FROM graph g
+		JOIN reachable r ON r.digest = g.parent_digest
+	)
+	DELETE FROM repository_objects
+	WHERE repository_id = $1
+	  AND digest NOT IN (SELECT digest FROM reachable)
+	RETURNING digest`
+
+	rows, err := tx.Query(ctx, sweepCmd, repositoryID)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
-	if result.RowsAffected() == 0 {
-		return false, nil
+	var removedDigests []string
+	for rows.Next() {
+		var d string
+		if err := rows.Scan(&d); err != nil {
+			rows.Close()
+			return false, nil, err
+		}
+		removedDigests = append(removedDigests, d)
 	}
-	return true, tx.Commit(ctx)
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return false, nil, err
+	}
+
+	if len(removedDigests) == 0 {
+		return false, nil, nil
+	}
+
+	// Among removed digests, find blobs that are now orphaned at the tenant
+	// level (not referenced by any other repository belonging to this tenant).
+	const tenantOrphanCmd = `SELECT o.digest, o.size_bytes
+		FROM objects o
+		WHERE o.digest = ANY($1)
+		  AND o.type = 'blob'
+		  AND NOT EXISTS (
+			SELECT 1 FROM repository_objects ro2
+			JOIN repositories r2  ON ro2.repository_id = r2.id
+			JOIN registries   reg ON r2.registry_id    = reg.id
+			WHERE ro2.digest = o.digest AND reg.tenant_id = $2
+		  )`
+	orphanRows, err := tx.Query(ctx, tenantOrphanCmd, removedDigests, tenantID)
+	if err != nil {
+		return false, nil, err
+	}
+	var orphaned []DeletedBlobInfo
+	for orphanRows.Next() {
+		var info DeletedBlobInfo
+		if err := orphanRows.Scan(&info.Digest, &info.SizeBytes); err != nil {
+			orphanRows.Close()
+			return false, nil, err
+		}
+		orphaned = append(orphaned, info)
+	}
+	orphanRows.Close()
+	if err := orphanRows.Err(); err != nil {
+		return false, nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return false, nil, err
+	}
+	return true, orphaned, nil
 }
 
 func (d *DB) ListUnreferencedObjectDigests(ctx context.Context, limit int) ([]string, error) {

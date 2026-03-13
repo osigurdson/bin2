@@ -10,9 +10,10 @@ import (
 )
 
 var (
-	ErrNotFound     = errors.New("record not found")
-	ErrConflict     = errors.New("conflict")
-	ErrScopeConflict = errors.New("scope conflict")
+	ErrNotFound          = errors.New("record not found")
+	ErrConflict          = errors.New("conflict")
+	ErrScopeConflict     = errors.New("scope conflict")
+	ErrManifestHasParent = errors.New("manifest is referenced by a parent index")
 )
 
 type DB struct {
