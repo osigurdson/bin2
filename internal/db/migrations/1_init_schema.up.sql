@@ -124,3 +124,16 @@ CREATE TABLE repository_objects (
   digest TEXT NOT NULL REFERENCES objects(digest) ON DELETE CASCADE,
   PRIMARY KEY (repository_id, digest)
 );
+CREATE INDEX IF NOT EXISTS idx_repository_objects_digest ON repository_objects (digest);
+
+CREATE TABLE usage_events (
+  id UUID PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
+  registry_id UUID REFERENCES registries(id),
+  repo_id UUID REFERENCES repositories(id),
+  digest TEXT CHECK (digest ~ '^sha256:[a-f0-9]{64}$'),
+  metric TEXT NOT NULL CHECK (metric IN ('storage-bytes', 'push-op-count', 'pull-op-count')),
+  value BIGINT NOT NULL
+);
+CREATE INDEX idx_usage_events_tenant_created_at ON usage_events (tenant_id, created_at);

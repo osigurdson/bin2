@@ -10,6 +10,7 @@ import (
 
 	"bin2.io/internal/db"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
@@ -65,6 +66,12 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 			return
 		}
 		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to resolve registry")
+		return
+	}
+
+	tenantID, err := s.db.GetRegistryTenantID(c.Request.Context(), registryID)
+	if err != nil {
+		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to resolve tenant")
 		return
 	}
 
@@ -157,6 +164,9 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 		return
 	}
 
+	// Emit push-op-count for the manifest itself.
+	s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, manifestDigest, db.MetricPushOpCount, 1)
+
 	c.Header("Docker-Content-Digest", manifestDigest)
 	if subjectDigest != "" {
 		c.Header("OCI-Subject", subjectDigest)
@@ -219,25 +229,46 @@ func (s *Server) deleteManifestHandler(c *gin.Context, repo, reference string) {
 		return
 	}
 
+	tenantID, tenantErr := s.db.GetRegistryTenantID(c.Request.Context(), registryID)
+	if tenantErr != nil {
+		logError(fmt.Errorf("GetRegistryTenantID: %w", tenantErr))
+		tenantID = uuid.Nil
+	}
+
 	var deleted bool
+	var deleteErr error
 	if digestHex, err := parseDigest(reference); err == nil {
-		deleted, err = s.db.DeleteManifestByDigestInRepository(
+		var orphaned []db.DeletedBlobInfo
+		deleted, orphaned, deleteErr = s.db.DeleteManifestByDigestInRepository(
 			c.Request.Context(),
 			registryID,
+			tenantID,
 			repoLeaf(repo),
 			"sha256:"+digestHex,
 		)
+		if deleteErr != nil {
+			if errors.Is(deleteErr, db.ErrManifestHasParent) {
+				writeOCIError(c, http.StatusConflict, "MANIFEST_REFERENCED", "manifest is referenced by an index; delete the index first")
+				return
+			}
+			writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to delete manifest")
+			return
+		}
+		// Emit negative storage-bytes for blobs now orphaned at tenant level.
+		for _, blob := range orphaned {
+			s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, blob.Digest, db.MetricStorageBytes, -blob.SizeBytes)
+		}
 	} else {
-		deleted, err = s.db.DeleteManifestReference(
+		deleted, deleteErr = s.db.DeleteManifestReference(
 			c.Request.Context(),
 			registryID,
 			repoLeaf(repo),
 			reference,
 		)
-	}
-	if err != nil {
-		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to delete manifest")
-		return
+		if deleteErr != nil {
+			writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to delete manifest")
+			return
+		}
 	}
 	if !deleted {
 		c.Status(http.StatusNotFound)

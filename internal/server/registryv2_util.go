@@ -87,6 +87,18 @@ func parseDigest(digest string) (string, error) {
 	return strings.ToLower(m[1]), nil
 }
 
+func normalizeUsageEventDigest(digest string) (string, error) {
+	digest = strings.TrimSpace(digest)
+	if digest == "" {
+		return "", nil
+	}
+	digestHex, err := parseDigest(digest)
+	if err != nil {
+		return "", err
+	}
+	return "sha256:" + digestHex, nil
+}
+
 func uploadRange(size int64) string {
 	if size <= 0 {
 		return "0-0"

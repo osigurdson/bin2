@@ -45,6 +45,7 @@ type Server struct {
 	workosClientID        string
 	apiKeyEncryptionKey   [32]byte
 	probeCache            *probeCache
+	usageIngestSecret     string
 }
 
 func New() (*Server, error) {
@@ -102,6 +103,12 @@ func New() (*Server, error) {
 		return nil, fmt.Errorf("could not load registry jwt keys: %w", err)
 	}
 
+	usageIngestSecret := strings.TrimSpace(os.Getenv("USAGE_INGEST_SECRET"))
+	if usageIngestSecret == "" {
+		conn.Close()
+		return nil, fmt.Errorf("USAGE_INGEST_SECRET is not defined")
+	}
+
 	s := &Server{
 		ctx:                   context.Background(),
 		router:                gin.Default(),
@@ -114,6 +121,7 @@ func New() (*Server, error) {
 		workosClientID:        workosClientID,
 		apiKeyEncryptionKey:   apiKeyEncryptionKey,
 		probeCache:            &probeCache{recent: make(map[string]time.Time)},
+		usageIngestSecret:     usageIngestSecret,
 	}
 	s.addRoutes()
 	return s, nil

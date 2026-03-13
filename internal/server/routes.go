@@ -52,4 +52,8 @@ func (s *Server) addRoutes() {
 	users := api.Group("/users")
 	users.Use(s.authMiddleware())
 	users.GET("/me", s.getCurrentUserHandler)
+
+	usage := api.Group("/usage")
+	usage.GET("/events", s.listUsageEventsHandler)
+	usage.POST("/events", s.ingestUsageEventsHandler)
 }

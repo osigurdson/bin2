@@ -147,3 +147,102 @@ fi
 
 cd "${REPO_ROOT}"
 "${binary_path}"
+
+check_usage_events() {
+  local registry_url="$1"
+  local username="$2"
+  local password="$3"
+
+  printf '\nChecking usage events...\n'
+
+  local token_resp
+  token_resp=$(curl -sf \
+    -u "${username}:${password}" \
+    "${registry_url}/v2/token?service=${registry_url##*/}&scope=" 2>/dev/null || echo '{}')
+
+  local token
+  token=$(printf '%s' "${token_resp}" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+print(data.get('token', ''))
+" 2>/dev/null || true)
+
+  if [[ -z "${token}" ]]; then
+    printf 'FAIL: could not obtain bearer token for usage event check\n' >&2
+    return 1
+  fi
+
+  local events
+  events=$(curl -sf \
+    -H "Authorization: Bearer ${token}" \
+    "${registry_url}/api/v1/usage/events?limit=500" 2>/dev/null || echo 'curl_failed')
+
+  if [[ "${events}" == "curl_failed" ]]; then
+    printf 'FAIL: could not fetch usage events\n' >&2
+    return 1
+  fi
+
+  local pos_storage_count push_total pull_total neg_count
+  pos_storage_count=$(printf '%s' "${events}" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+print(sum(1 for e in data if e['metric'] == 'storage-bytes' and e['value'] > 0))
+")
+
+  push_total=$(printf '%s' "${events}" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+print(sum(e['value'] for e in data if e['metric'] == 'push-op-count'))
+")
+
+  pull_total=$(printf '%s' "${events}" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+print(sum(e['value'] for e in data if e['metric'] == 'pull-op-count'))
+")
+
+  neg_count=$(printf '%s' "${events}" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+print(sum(1 for e in data if e['metric'] == 'storage-bytes' and e['value'] < 0))
+")
+
+  local failed=0
+
+  if [[ "${pos_storage_count}" -gt 0 ]]; then
+    printf '  positive storage-bytes events: %s [OK]\n' "${pos_storage_count}"
+  else
+    printf '  FAIL: expected positive storage-bytes events, got 0\n'
+    failed=1
+  fi
+
+  if [[ "${push_total}" -gt 0 ]]; then
+    printf '  push-op-count total value: %s [OK]\n' "${push_total}"
+  else
+    printf '  FAIL: expected push-op-count total value > 0, got %s\n' "${push_total}"
+    failed=1
+  fi
+
+  if [[ "${pull_total}" -gt 0 ]]; then
+    printf '  pull-op-count total value: %s [OK]\n' "${pull_total}"
+  else
+    printf '  FAIL: expected pull-op-count total value > 0, got %s\n' "${pull_total}"
+    failed=1
+  fi
+
+  if [[ "${neg_count}" -gt 0 ]]; then
+    printf '  negative storage-bytes (from deletes): %s [OK]\n' "${neg_count}"
+  else
+    printf '  FAIL: expected negative storage-bytes events from content-management deletes, got 0\n'
+    failed=1
+  fi
+
+  if [[ "${failed}" -ne 0 ]]; then
+    printf 'Usage event assertions FAILED\n' >&2
+    return 1
+  fi
+
+  printf 'Usage event assertions PASSED\n'
+}
+
+check_usage_events "${OCI_ROOT_URL}" "${OCI_USERNAME}" "${OCI_PASSWORD}"
