@@ -298,6 +298,7 @@ func (s *Server) completeBlobUpload(c *gin.Context, repo, uuid, digestHex string
 					opCount = 1
 				}
 			}
+			s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, db.MetricStorageBytes, size)
 			s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, db.MetricPushOpCount, opCount)
 		}
 		c.Header("Location", fmt.Sprintf("/v2/%s/blobs/%s", repo, digest))
@@ -322,6 +323,7 @@ func (s *Server) completeBlobUpload(c *gin.Context, repo, uuid, digestHex string
 				opCount = 1
 			}
 		}
+		s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, db.MetricStorageBytes, size)
 		s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, db.MetricPushOpCount, opCount)
 	}
 

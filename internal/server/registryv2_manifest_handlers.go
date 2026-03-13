@@ -103,19 +103,6 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 		blobSizes[normalizedDigest] = size
 	}
 
-	// Determine which blobs are new to this tenant (before UpsertManifest adds them).
-	newBlobDigests := make([]string, 0, len(normalizedBlobDigests))
-	for _, blobDigest := range normalizedBlobDigests {
-		has, err := s.db.TenantHasBlob(c.Request.Context(), tenantID, blobDigest)
-		if err != nil {
-			logError(fmt.Errorf("TenantHasBlob: %w", err))
-			continue
-		}
-		if !has {
-			newBlobDigests = append(newBlobDigests, blobDigest)
-		}
-	}
-
 	for _, blobDigest := range normalizedBlobDigests {
 		if err := s.trackRegistryBlobDigest(c.Request.Context(), blobDigest, blobSizes[blobDigest]); err != nil {
 			writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to index referenced blob")
@@ -177,10 +164,7 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 		return
 	}
 
-	// Emit storage-bytes for newly acquired blobs, plus push-op-count for the manifest.
-	for _, blobDigest := range newBlobDigests {
-		s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, db.MetricStorageBytes, blobSizes[blobDigest])
-	}
+	// Emit push-op-count for the manifest itself.
 	s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, db.MetricPushOpCount, 1)
 
 	c.Header("Docker-Content-Digest", manifestDigest)
