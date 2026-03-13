@@ -41,6 +41,7 @@ func (s *Server) listUsageEventsHandler(c *gin.Context) {
 		CreatedAt  string  `json:"createdAt"`
 		RegistryID *string `json:"registryId,omitempty"`
 		RepoID     *string `json:"repoId,omitempty"`
+		Digest     string  `json:"digest,omitempty"`
 		Metric     string  `json:"metric"`
 		Value      int64   `json:"value"`
 	}
@@ -50,6 +51,7 @@ func (s *Server) listUsageEventsHandler(c *gin.Context) {
 		resp := eventResponse{
 			ID:        e.ID.String(),
 			CreatedAt: e.CreatedAt.UTC().Format(time.RFC3339),
+			Digest:    e.Digest,
 			Metric:    e.Metric,
 			Value:     e.Value,
 		}
@@ -79,6 +81,7 @@ func (s *Server) ingestUsageEventsHandler(c *gin.Context) {
 	type ingestRequest struct {
 		ID     string `json:"id"`
 		RepoID string `json:"repoId"`
+		Digest string `json:"digest"`
 		Metric string `json:"metric"`
 		Value  int64  `json:"value"`
 	}
@@ -100,9 +103,15 @@ func (s *Server) ingestUsageEventsHandler(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid metric: " + req.Metric})
 			return
 		}
+		digest, err := normalizeUsageEventDigest(req.Digest)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid digest: " + req.Digest})
+			return
+		}
 		event := db.UsageEvent{
 			ID:       id,
 			TenantID: tenantID,
+			Digest:   digest,
 			Metric:   req.Metric,
 			Value:    req.Value,
 		}

@@ -23,13 +23,20 @@ func (s *Server) resolveTenantID(ctx context.Context, auth registryAuthContext, 
 }
 
 // emitUsageEvent inserts a single usage event, logging but not propagating any error.
-func (s *Server) emitUsageEvent(ctx context.Context, tenantID, registryID uuid.UUID, repoID *uuid.UUID, metric string, value int64) {
+func (s *Server) emitUsageEvent(ctx context.Context, tenantID, registryID uuid.UUID, repoID *uuid.UUID, digest, metric string, value int64) {
 	if s.db == nil || tenantID == uuid.Nil {
 		return
 	}
+
+	normalizedDigest, err := normalizeUsageEventDigest(digest)
+	if err != nil {
+		logError(fmt.Errorf("emitUsageEvent %s invalid digest %q: %w", metric, digest, err))
+	}
+
 	event := db.UsageEvent{
 		ID:       uuid.New(),
 		TenantID: tenantID,
+		Digest:   normalizedDigest,
 		Metric:   metric,
 		Value:    value,
 	}

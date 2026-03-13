@@ -222,7 +222,7 @@ func (s *Server) mountBlobHandler(c *gin.Context, repo, mountDigest, fromRepo st
 		}
 		// Billing: emit push-op-count if tenant doesn't already own this blob.
 		if auth, authErr := s.getRegistryAuth(c); authErr == nil {
-			if _, tenantID, tenantErr := s.resolveTenantID(c.Request.Context(), auth, repo); tenantErr == nil {
+			if registryID, tenantID, tenantErr := s.resolveTenantID(c.Request.Context(), auth, repo); tenantErr == nil {
 				if has, _ := s.db.TenantHasBlob(c.Request.Context(), tenantID, digest); !has {
 					opCount := int64(1)
 					if size > 0 {
@@ -231,7 +231,7 @@ func (s *Server) mountBlobHandler(c *gin.Context, repo, mountDigest, fromRepo st
 							opCount = 1
 						}
 					}
-					s.emitUsageEvent(c.Request.Context(), tenantID, auth.registryID, nil, db.MetricPushOpCount, opCount)
+					s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, digest, db.MetricPushOpCount, opCount)
 				}
 			}
 		}
@@ -298,8 +298,8 @@ func (s *Server) completeBlobUpload(c *gin.Context, repo, uuid, digestHex string
 					opCount = 1
 				}
 			}
-			s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, db.MetricStorageBytes, size)
-			s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, db.MetricPushOpCount, opCount)
+			s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, digest, db.MetricStorageBytes, size)
+			s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, digest, db.MetricPushOpCount, opCount)
 		}
 		c.Header("Location", fmt.Sprintf("/v2/%s/blobs/%s", repo, digest))
 		c.Header("Docker-Content-Digest", digest)
@@ -323,8 +323,8 @@ func (s *Server) completeBlobUpload(c *gin.Context, repo, uuid, digestHex string
 				opCount = 1
 			}
 		}
-		s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, db.MetricStorageBytes, size)
-		s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, db.MetricPushOpCount, opCount)
+		s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, digest, db.MetricStorageBytes, size)
+		s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, digest, db.MetricPushOpCount, opCount)
 	}
 
 	c.Header("Location", fmt.Sprintf("/v2/%s/blobs/%s", repo, digest))
@@ -415,8 +415,8 @@ func (s *Server) getBlobHandler(c *gin.Context, repo, digest string) {
 
 	// Emit pull-op-count for direct (non-worker) blob pulls.
 	if auth, authErr := s.getRegistryAuth(c); authErr == nil {
-		if _, tenantID, tenantErr := s.resolveTenantID(c.Request.Context(), auth, repo); tenantErr == nil {
-			s.emitUsageEvent(c.Request.Context(), tenantID, auth.registryID, nil, db.MetricPullOpCount, 10)
+		if registryID, tenantID, tenantErr := s.resolveTenantID(c.Request.Context(), auth, repo); tenantErr == nil {
+			s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, "sha256:"+digestHex, db.MetricPullOpCount, 10)
 		}
 	}
 

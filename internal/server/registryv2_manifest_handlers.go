@@ -165,7 +165,7 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 	}
 
 	// Emit push-op-count for the manifest itself.
-	s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, db.MetricPushOpCount, 1)
+	s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, manifestDigest, db.MetricPushOpCount, 1)
 
 	c.Header("Docker-Content-Digest", manifestDigest)
 	if subjectDigest != "" {
@@ -256,7 +256,7 @@ func (s *Server) deleteManifestHandler(c *gin.Context, repo, reference string) {
 		}
 		// Emit negative storage-bytes for blobs now orphaned at tenant level.
 		for _, blob := range orphaned {
-			s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, db.MetricStorageBytes, -blob.SizeBytes)
+			s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, blob.Digest, db.MetricStorageBytes, -blob.SizeBytes)
 		}
 	} else {
 		deleted, deleteErr = s.db.DeleteManifestReference(
