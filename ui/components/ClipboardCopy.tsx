@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
 
-export default function ClipboardCopy({ copyText }: { copyText: string; }) {
+export default function ClipboardCopy({ copyText, className = "btn btn-sm btn-ghost" }: { copyText: string; className?: string }) {
   const [copied, setCopied] = useState(false);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -26,7 +26,7 @@ export default function ClipboardCopy({ copyText }: { copyText: string; }) {
 
   return (
     <button
-      className="btn btn-sm btn-ghost"
+      className={className}
       type="button"
       title="Copy key"
 

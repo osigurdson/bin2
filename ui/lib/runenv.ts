@@ -10,6 +10,7 @@ export function isDev(): boolean {
 
 export interface RegistryInfo {
   addr: string,
+  pullAddr: string,
   isInsecure: boolean,
 }
 
@@ -19,11 +20,11 @@ export function registryAddr(): string {
 
 export function getRegistryInfo(): RegistryInfo {
   const addr = isDev() ? 'localhost:5000' : 'bin2.nthesis.ai';
-  const registryInfo: RegistryInfo = {
-    addr: addr,
+  return {
+    addr,
+    pullAddr: isDev() ? addr : `${addr}-pull`,
     isInsecure: isDev(),
-  }
-  return registryInfo;
+  };
 }
 
 export function getSignoutRedirect(): string {

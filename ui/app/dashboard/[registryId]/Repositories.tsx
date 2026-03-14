@@ -4,7 +4,7 @@ import { Repository } from "@/api/repositories/types";
 import { useDeleteRepository, useGetRepositories } from "@/api/repositories/hooks";
 import ClipboardCopy from "@/components/ClipboardCopy";
 import ConfirmModal from "@/components/ConfirmModal";
-import { RefreshCw, Trash2 } from "lucide-react";
+import { RefreshCw, Tag, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { ClientType } from "./Commands";
 import { getRegistryInfo } from "@/lib/runenv";
@@ -33,7 +33,7 @@ type RepositoriesProps = {
 };
 
 export default function Repositories({ registryId, registryName, selectedClient }: RepositoriesProps) {
-  const { addr, isInsecure } = getRegistryInfo();
+  const { addr, pullAddr, isInsecure } = getRegistryInfo();
   const { data, isLoading, isError, refetch, isFetching } = useGetRepositories(registryId);
   const repos: Repository[] = data?.repositories ?? [];
   const [pendingDeleteRepo, setPendingDeleteRepo] = useState<Repository | null>(null);
@@ -132,29 +132,43 @@ export default function Repositories({ registryId, registryName, selectedClient 
             </tr>
           </thead>
           <tbody>
-            {repos.map((repo) => (
-              <tr key={repo.id}>
-                <td className="py-1">{repo.name}</td>
-                <td className="px-2 py-1">{repo.lastTag ?? "-"}</td>
-                <td className="px-2 py-1">{formatTimeAgo(new Date(repo.lastPush))}</td>
-                <td className="px-2 py-1 text-right">
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-xs btn-square text-error"
-                    title={`Delete ${repo.name}`}
-                    aria-label={`Delete ${repo.name}`}
-                    disabled={isDeletePending && deletingRepositoryId === repo.id}
-                    onClick={() => onRequestDeleteRepository(repo)}
-                  >
-                    {(isDeletePending && deletingRepositoryId === repo.id) ? (
-                      <span className="loading loading-spinner loading-xs" aria-hidden />
-                    ) : (
-                      <Trash2 size={14} aria-hidden />
-                    )}
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {repos.map((repo) => {
+              const tag = repo.lastTag ?? 'latest';
+              const pullCmd = buildPullCommand(selectedClient, pullAddr, registryName, repo.name, tag, isInsecure);
+              return (
+                <tr key={repo.id}>
+                  <td className="py-1">{repo.name}</td>
+                  <td className="px-2 py-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span>{repo.lastTag ?? <span className="opacity-40">-</span>}</span>
+                      {repo.lastTag && (
+                        <div className="flex items-center shrink-0 rounded bg-base-300 px-1">
+                          <Tag size={11} className="opacity-40" />
+                          <ClipboardCopy copyText={pullCmd} className="btn btn-ghost btn-xs btn-square" />
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="pl-6 pr-2 py-1">{formatTimeAgo(new Date(repo.lastPush))}</td>
+                  <td className="px-2 py-1 text-right">
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs btn-square text-error"
+                      title={`Delete ${repo.name}`}
+                      aria-label={`Delete ${repo.name}`}
+                      disabled={isDeletePending && deletingRepositoryId === repo.id}
+                      onClick={() => onRequestDeleteRepository(repo)}
+                    >
+                      {(isDeletePending && deletingRepositoryId === repo.id) ? (
+                        <span className="loading loading-spinner loading-xs" aria-hidden />
+                      ) : (
+                        <Trash2 size={14} aria-hidden />
+                      )}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -198,6 +212,16 @@ function RepositoryHeader({ onRefresh, isRefreshing }: RepositoryHeaderProps) {
   );
 }
 
+function buildPullCommand(client: ClientType, pullAddr: string, registry: string, repo: string, tag: string, isInsecure: boolean): string {
+  const imageUri = `${pullAddr}/${registry}/${repo}:${tag}`;
+  switch (client) {
+    case 'docker': return `docker pull ${imageUri}`;
+    case 'podman': return `podman pull${isInsecure ? ' --tls-verify=false' : ''} ${imageUri}`;
+    case 'oras':   return `oras pull${isInsecure ? ' --plain-http' : ''} ${imageUri}`;
+    case 'k8s':    return `image: ${imageUri}`;
+  }
+}
+
 // Client specific instructions
 interface InstructionProps {
   addr: string;
@@ -207,99 +231,58 @@ interface InstructionProps {
 
 type InstructionComponent = (props: InstructionProps) => React.ReactNode;
 
-function DockerInstruction({ addr, registry, isInsecure }: InstructionProps) {
-  const pullCmd = 'docker pull hello-world:latest';
-  const imageUri = `${addr}/${registry}/hello-world:latest`;
-  const tagCmd = `docker tag hello-world:latest ${imageUri}`;
-  const pushCmd = `docker push ${imageUri}`;
-
+function CombinedInstructions({ commands, note }: { commands: string[]; note?: React.ReactNode }) {
+  const copyText = commands.join('\n');
   return (
-    <div>No repositories yet. Push your first image after running the login
-      command above. Some example tag and push commands below.
-
-      {isInsecure && (
-        <div className="text-warning opacity-70 mt-2">
-          Note: Docker needs this registry configured as an insecure registry in daemon settings.
-        </div>
-      )}
-
-      <div className="flex items-center gap-2 mt-2">
-        <code>{pullCmd}</code>
-        <ClipboardCopy copyText={pullCmd} />
-      </div>
-      <div className="flex items-center gap-2">
-        <code>{tagCmd}</code>
-        <ClipboardCopy copyText={tagCmd} />
-      </div>
-      <div className="flex items-center gap-2">
-        <code>{pushCmd}</code>
-        <ClipboardCopy copyText={pushCmd} />
+    <div className="space-y-2">
+      <p className="text-sm opacity-60">No repositories yet. Log in above, then paste these commands to push a test image.</p>
+      {note}
+      <div className="flex items-start gap-2">
+        <pre className="text-xs flex-1">{commands.join('\n')}</pre>
+        <ClipboardCopy copyText={copyText} />
       </div>
     </div>
   );
 }
 
-function PodmanInstruction({ addr, registry, isInsecure }: InstructionProps) {
-  const pullCmd = 'podman pull docker.io/library/hello-world:latest';
+function DockerInstruction({ addr, registry, isInsecure }: InstructionProps) {
   const imageUri = `${addr}/${registry}/hello-world:latest`;
-  const tagCmd = `podman tag docker.io/library/hello-world:latest ${imageUri}`;
-  const tlsVerify = isInsecure ? '--tls-verify=false' : '';
-  const pushCmd = `podman push ${tlsVerify} ${imageUri}`;
+  const commands = [
+    'docker pull hello-world:latest',
+    `docker tag hello-world:latest ${imageUri}`,
+    `docker push ${imageUri}`,
+  ];
+  const note = isInsecure ? (
+    <p className="text-xs text-warning opacity-70">Note: Docker requires this registry configured as insecure in daemon settings.</p>
+  ) : undefined;
+  return <CombinedInstructions commands={commands} note={note} />;
+}
 
-  return (
-    <div>No repositories yet. Push your first image after running the login
-      command above. Some example tag and push commands below.
-
-      <div className="flex items-center gap-2 mt-2">
-        <code className="">{pullCmd}</code>
-        <ClipboardCopy copyText={pullCmd} />
-      </div>
-      <div className="">
-        <div className="flex items-center gap-2">
-          <code className="">{tagCmd}</code>
-          <ClipboardCopy copyText={tagCmd} />
-        </div>
-        <div className="flex items-center gap-2">
-          <code className="">{pushCmd}</code>
-          <ClipboardCopy copyText={pushCmd} />
-        </div>
-      </div>
-    </div>
-  );
+function PodmanInstruction({ addr, registry, isInsecure }: InstructionProps) {
+  const imageUri = `${addr}/${registry}/hello-world:latest`;
+  const tlsVerify = isInsecure ? ' --tls-verify=false' : '';
+  const commands = [
+    'podman pull docker.io/library/hello-world:latest',
+    `podman tag docker.io/library/hello-world:latest ${imageUri}`,
+    `podman push${tlsVerify} ${imageUri}`,
+  ];
+  return <CombinedInstructions commands={commands} />;
 }
 
 function OrasInstruction({ addr, registry, isInsecure }: InstructionProps) {
   const artifactUri = `${addr}/${registry}/hello-artifact:v1`;
   const plainHttp = isInsecure ? '--plain-http ' : '';
-  const createArtifactFileCmd = "echo 'hello from oras' > hello.txt";
-  const pushCmd = `oras push ${plainHttp}${artifactUri} ./hello.txt:text/plain`;
-  const pullCmd = `oras pull ${plainHttp}${artifactUri}`;
-
-  return (
-    <div>No repositories yet. Push your first OCI artifact after running the
-      login command above. Some example push and pull commands below.
-
-      <div className="flex items-center gap-2 mt-2">
-        <code>{createArtifactFileCmd}</code>
-        <ClipboardCopy copyText={createArtifactFileCmd} />
-      </div>
-      <div className="flex items-center gap-2">
-        <code>{pushCmd}</code>
-        <ClipboardCopy copyText={pushCmd} />
-      </div>
-      <div className="flex items-center gap-2">
-        <code>{pullCmd}</code>
-        <ClipboardCopy copyText={pullCmd} />
-      </div>
-    </div>
-  );
+  const commands = [
+    "echo 'hello from oras' > hello.txt",
+    `oras push ${plainHttp}${artifactUri} ./hello.txt:text/plain`,
+    `oras pull ${plainHttp}${artifactUri}`,
+  ];
+  return <CombinedInstructions commands={commands} />;
 }
 
 function K8Instruction() {
   return (
-    <div>No repositories yet. First push an image using docker or podman. Then
-      create a pull secret in your cluster as shown above.
-    </div>
+    <p className="text-sm opacity-60">No repositories yet. Push an image using docker or podman first, then create a pull secret in your cluster using the manifest above.</p>
   );
 }
 
