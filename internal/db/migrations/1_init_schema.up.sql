@@ -137,3 +137,6 @@ CREATE TABLE usage_events (
   value BIGINT NOT NULL
 );
 CREATE INDEX idx_usage_events_tenant_created_at ON usage_events (tenant_id, created_at);
+CREATE INDEX idx_usage_events_tenant_metric_created_at
+  ON usage_events (tenant_id, metric, created_at)
+  INCLUDE (value);

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useDeleteRegistry, useGetRegistries } from "@/api/registries/hooks";
 import { useGetCurrentUser } from "@/api/users/hooks";
 import RegistryCard from "./RegistryCard";
+import MonthlyUsagePanel from "./MonthlyUsagePanel";
 import { formatBytes } from "@/lib/formatBytes";
 import ConfirmModal from "@/components/ConfirmModal";
 
@@ -82,14 +83,17 @@ export default function Dashboard() {
 
   if (registriesData.registries.length === 0) {
     return (
-      <div className="w-full rounded-lg border border-base-300 bg-base-100 p-6">
-        <h2 className="text-xl font-bold">Create your first registry</h2>
-        <p className="mt-2 text-sm opacity-75">
-          Add a registry to start pushing and pulling container images.
-        </p>
-        <Link href="/dashboard/newRegistry" className="btn btn-primary mt-5">
-          Create First Registry
-        </Link>
+      <div className="flex w-full flex-col gap-4">
+        <MonthlyUsagePanel />
+        <div className="w-full rounded-lg border border-base-300 bg-base-100 p-6">
+          <h2 className="text-xl font-bold">Create your first registry</h2>
+          <p className="mt-2 text-sm opacity-75">
+            Add a registry to start pushing and pulling container images.
+          </p>
+          <Link href="/dashboard/newRegistry" className="btn btn-primary mt-5">
+            Create First Registry
+          </Link>
+        </div>
       </div>
     );
   }
@@ -103,7 +107,7 @@ export default function Dashboard() {
     }
   }
   return (
-    <div className="flex flex-col w-full">
+    <div className="flex w-full flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           {registriesHeaderText}
@@ -125,6 +129,8 @@ export default function Dashboard() {
           </li>
         ))}
       </ul>
+
+      <MonthlyUsagePanel />
       <ConfirmModal
         isOpen={!!registryPendingConfirm}
         title="Delete Registry"

@@ -26,6 +26,11 @@ type UsageEvent struct {
 	Value      int64
 }
 
+type UsageEventDelta struct {
+	CreatedAt time.Time
+	Value     int64
+}
+
 func (d *DB) InsertUsageEvents(ctx context.Context, events []UsageEvent) error {
 	if len(events) == 0 {
 		return nil
@@ -86,6 +91,62 @@ func (d *DB) ListUsageEventsByTenant(ctx context.Context, tenantID uuid.UUID, me
 		events = append(events, e)
 	}
 	return events, rows.Err()
+}
+
+func (d *DB) SumUsageMetricByTenantBetween(ctx context.Context, tenantID uuid.UUID, metric string, from, to time.Time) (int64, error) {
+	const cmd = `SELECT COALESCE(SUM(value), 0)::BIGINT
+		FROM usage_events
+		WHERE tenant_id = $1
+		  AND metric = $2
+		  AND created_at >= $3
+		  AND created_at < $4`
+
+	var total int64
+	if err := d.conn.QueryRow(ctx, cmd, tenantID, metric, from, to).Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+func (d *DB) SumUsageMetricByTenantBefore(ctx context.Context, tenantID uuid.UUID, metric string, before time.Time) (int64, error) {
+	const cmd = `SELECT COALESCE(SUM(value), 0)::BIGINT
+		FROM usage_events
+		WHERE tenant_id = $1
+		  AND metric = $2
+		  AND created_at < $3`
+
+	var total int64
+	if err := d.conn.QueryRow(ctx, cmd, tenantID, metric, before).Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+func (d *DB) ListUsageMetricDeltasByTenantBetween(ctx context.Context, tenantID uuid.UUID, metric string, from, to time.Time) ([]UsageEventDelta, error) {
+	const cmd = `SELECT created_at, COALESCE(SUM(value), 0)::BIGINT
+		FROM usage_events
+		WHERE tenant_id = $1
+		  AND metric = $2
+		  AND created_at >= $3
+		  AND created_at < $4
+		GROUP BY created_at
+		ORDER BY created_at ASC`
+
+	rows, err := d.conn.Query(ctx, cmd, tenantID, metric, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	deltas := make([]UsageEventDelta, 0)
+	for rows.Next() {
+		var delta UsageEventDelta
+		if err := rows.Scan(&delta.CreatedAt, &delta.Value); err != nil {
+			return nil, err
+		}
+		deltas = append(deltas, delta)
+	}
+	return deltas, rows.Err()
 }
 
 // TenantHasBlob reports whether any repository in the tenant already has a

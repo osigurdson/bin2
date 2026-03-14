@@ -24,7 +24,8 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const { accessToken: _accessToken, ...auth } = await withAuth();
+  const { accessToken, ...auth } = await withAuth();
+  void accessToken;
 
   return (
     <html lang="en" className={`${spaceMono.className} ${spaceMono.variable}`} data-theme="light">

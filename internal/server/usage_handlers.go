@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -66,6 +68,99 @@ func (s *Server) listUsageEventsHandler(c *gin.Context) {
 		out = append(out, resp)
 	}
 	c.JSON(http.StatusOK, out)
+}
+
+func (s *Server) usageSummaryHandler(c *gin.Context) {
+	u, err := s.getUser(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	from, to, err := usageSummaryWindow(c.Query("from"), c.Query("to"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	asOf := usageSummaryAsOf(from, to, time.Now().UTC())
+
+	pushOpCount, err := s.db.SumUsageMetricByTenantBetween(c.Request.Context(), u.tenantID, db.MetricPushOpCount, from, asOf)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to summarize usage"})
+		return
+	}
+
+	pullOpCount, err := s.db.SumUsageMetricByTenantBetween(c.Request.Context(), u.tenantID, db.MetricPullOpCount, from, asOf)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to summarize usage"})
+		return
+	}
+
+	openingStorageBytes, err := s.db.SumUsageMetricByTenantBefore(c.Request.Context(), u.tenantID, db.MetricStorageBytes, from)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to summarize usage"})
+		return
+	}
+
+	storageDeltas, err := s.db.ListUsageMetricDeltasByTenantBetween(c.Request.Context(), u.tenantID, db.MetricStorageBytes, from, asOf)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to summarize usage"})
+		return
+	}
+
+	summary, err := calculateUsagePeriodSummary(from, to, asOf, openingStorageBytes, storageDeltas, pushOpCount, pullOpCount)
+	if err != nil {
+		logError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to summarize usage"})
+		return
+	}
+
+	type summaryResponse struct {
+		From                string `json:"from"`
+		To                  string `json:"to"`
+		AsOf                string `json:"asOf"`
+		PushOpCount         int64  `json:"pushOpCount"`
+		PullOpCount         int64  `json:"pullOpCount"`
+		StorageOpeningBytes int64  `json:"storageOpeningBytes"`
+		StorageClosingBytes int64  `json:"storageClosingBytes"`
+		StorageByteSeconds  string `json:"storageByteSeconds"`
+		StorageGiBHours     string `json:"storageGiBHours"`
+		StorageGiBMonths    string `json:"storageGiBMonths"`
+		StorageChargeUSD    string `json:"storageChargeUsd"`
+		TotalChargeUSD      string `json:"totalChargeUsd"`
+	}
+
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, summaryResponse{
+		From:                summary.From.Format(time.RFC3339),
+		To:                  summary.To.Format(time.RFC3339),
+		AsOf:                summary.AsOf.Format(time.RFC3339),
+		PushOpCount:         summary.PushOpCount,
+		PullOpCount:         summary.PullOpCount,
+		StorageOpeningBytes: summary.StorageOpeningBytes,
+		StorageClosingBytes: summary.StorageClosingBytes,
+		StorageByteSeconds:  formatUsageDecimal(summary.storageByteSeconds(), 9),
+		StorageGiBHours:     formatUsageDecimal(summary.storageGiBHours(), 12),
+		StorageGiBMonths:    formatUsageDecimal(summary.storageGiBMonths(), 12),
+		StorageChargeUSD:    formatUsageDecimal(summary.storageChargeUSD(), 12),
+		TotalChargeUSD:      formatUsageDecimal(summary.totalChargeUSD(), 12),
+	})
 }
 
 // ingestUsageEventsHandler handles POST /api/v1/usage/events.

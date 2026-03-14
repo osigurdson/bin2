@@ -55,5 +55,6 @@ func (s *Server) addRoutes() {
 
 	usage := api.Group("/usage")
 	usage.GET("/events", s.listUsageEventsHandler)
+	usage.GET("/summary", s.authMiddleware(), s.usageSummaryHandler)
 	usage.POST("/events", s.ingestUsageEventsHandler)
 }
