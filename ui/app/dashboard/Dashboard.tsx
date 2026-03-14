@@ -7,7 +7,6 @@ import { useDeleteRegistry, useGetRegistries } from "@/api/registries/hooks";
 import { useGetCurrentUser } from "@/api/users/hooks";
 import RegistryCard from "./RegistryCard";
 import MonthlyUsagePanel from "./MonthlyUsagePanel";
-import { formatBytes } from "@/lib/formatBytes";
 import ConfirmModal from "@/components/ConfirmModal";
 
 export default function Dashboard() {
@@ -32,23 +31,17 @@ export default function Dashboard() {
   }, [currentUser, isLoadingCurrentUser, router]);
 
   const onDeleteRegistry = (registryId: string, registryName: string) => {
-    if (isDeletePending) {
-      return;
-    }
+    if (isDeletePending) return;
     setRegistryPendingConfirm({ id: registryId, name: registryName });
   };
 
   const onCancelDeleteRegistry = () => {
-    if (isDeletePending) {
-      return;
-    }
+    if (isDeletePending) return;
     setRegistryPendingConfirm(null);
   };
 
   const onConfirmDeleteRegistry = () => {
-    if (!registryPendingConfirm) {
-      return;
-    }
+    if (!registryPendingConfirm) return;
     const target = registryPendingConfirm;
     setRegistryPendingConfirm(null);
     setDeletingRegistryId(target.id);
@@ -77,60 +70,54 @@ export default function Dashboard() {
     return <div className="p-2 text-sm opacity-70">Preparing onboarding...</div>;
   }
 
-  const totalSizeBytes = registriesData.registries.reduce((sum, registry) => {
-    return sum + (registry.sizeBytes ?? 0);
-  }, 0);
+  const registries = registriesData.registries;
 
-  if (registriesData.registries.length === 0) {
-    return (
-      <div className="flex w-full flex-col gap-4">
-        <MonthlyUsagePanel />
-        <div className="w-full rounded-lg border border-base-300 bg-base-100 p-6">
-          <h2 className="text-xl font-bold">Create your first registry</h2>
-          <p className="mt-2 text-sm opacity-75">
-            Add a registry to start pushing and pulling container images.
-          </p>
-          <Link href="/dashboard/newRegistry" className="btn btn-primary mt-5">
-            Create First Registry
+  return (
+    <div className="flex w-full flex-col gap-8">
+
+      {/* Registries section */}
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-widest opacity-40">Registries</span>
+            {registries.length > 0 && (
+              <span className="badge badge-ghost badge-sm opacity-60">
+                {registries.length} {registries.length === 1 ? 'registry' : 'registries'}
+              </span>
+            )}
+          </div>
+          <Link href="/dashboard/newRegistry" className="btn btn-sm btn-outline">
+            + New registry
           </Link>
         </div>
-      </div>
-    );
-  }
 
-  let registriesHeaderText = '';
-  if (registriesData.registries.length > 1) {
-    registriesHeaderText =
-      `${registriesData.registries.length} registries `;
-    if (totalSizeBytes > 0) {
-      registriesHeaderText = `${registriesHeaderText} (${formatBytes(totalSizeBytes)})`;
-    }
-  }
-  return (
-    <div className="flex w-full flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          {registriesHeaderText}
-        </div>
-        <Link href="/dashboard/newRegistry" className="btn btn-sm btn-primary">
-          Create Registry
-        </Link>
-      </div>
-      <ul className="space-y-2 mt-4">
-        {registriesData.registries.map((registry) => (
-          <li key={registry.id}>
-            <RegistryCard
-              id={registry.id}
-              name={registry.name}
-              sizeBytes={registry.sizeBytes}
-              onDelete={onDeleteRegistry}
-              isDeleting={isDeletePending && deletingRegistryId === registry.id}
-            />
-          </li>
-        ))}
-      </ul>
+        {registries.length === 0 ? (
+          <div className="rounded-xl border border-base-300 bg-base-100 px-4 py-6 text-center">
+            <p className="text-sm opacity-60">No registries yet.</p>
+            <Link href="/dashboard/newRegistry" className="btn btn-primary btn-sm mt-4">
+              Create First Registry
+            </Link>
+          </div>
+        ) : (
+          <ul className="flex flex-col">
+            {registries.map((registry) => (
+              <li key={registry.id}>
+                <RegistryCard
+                  id={registry.id}
+                  name={registry.name}
+                  sizeBytes={registry.sizeBytes}
+                  onDelete={onDeleteRegistry}
+                  isDeleting={isDeletePending && deletingRegistryId === registry.id}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
+      {/* Usage section */}
       <MonthlyUsagePanel />
+
       <ConfirmModal
         isOpen={!!registryPendingConfirm}
         title="Delete Registry"

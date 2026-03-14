@@ -15,81 +15,69 @@ export default function MonthlyUsagePanel() {
     year: 'numeric',
     timeZone: 'UTC',
   }).format(new Date());
+
   const storageDisplay = formatStorageMonthDisplay(usageSummary?.storageGiBMonths ?? "0");
+  const storageUnit = storageDisplay.unit.replace('-months', '·mo');
   const totalCharges = formatUsdAmount(usageSummary?.totalChargeUsd ?? "0");
 
   return (
-    <details
-      className="collapse collapse-arrow rounded-2xl bg-base-100 mt-4"
-      aria-label="Usage"
-    >
-      <summary className="collapse-title flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 pr-10">
-        <div className="text-xs font-bold">
-          Usage
-        </div>
-        <div className="text-[0.8rem] opacity-70">{monthLabel} UTC</div>
-      </summary>
-      <div className="collapse-content pt-0">
-        <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
-          <UsageSummaryCard
-            label="Layer Pull"
-            value={formatCompactNumber(usageSummary?.pullOpCount ?? 0)}
-            meta="Count"
-            isLoading={isLoading}
-            isError={isError}
-          />
-          <UsageSummaryCard
-            label="Layer Push"
-            value={formatCompactNumber(usageSummary?.pushOpCount ?? 0)}
-            meta="Count"
-            isLoading={isLoading}
-            isError={isError}
-          />
-          <UsageSummaryCard
-            label="Storage"
-            value={storageDisplay.value}
-            meta={storageDisplay.unit}
-            isLoading={isLoading}
-            isError={isError}
-          />
-          <UsageSummaryCard
-            label="Charges"
-            value={totalCharges}
-            meta="Month to date"
-            isLoading={isLoading}
-            isError={isError}
-          />
-        </div>
+    <section>
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-widest opacity-40">Usage</span>
+        <span className="text-xs opacity-40">{monthLabel} UTC</span>
       </div>
-    </details>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <UsageCard label="Layer pulls" isLoading={isLoading} isError={isError}>
+          <span className="text-2xl font-bold leading-tight">
+            {formatCompactNumber(usageSummary?.pullOpCount ?? 0)}
+          </span>
+        </UsageCard>
+        <UsageCard label="Layer pushes" isLoading={isLoading} isError={isError}>
+          <span className="text-2xl font-bold leading-tight">
+            {formatCompactNumber(usageSummary?.pushOpCount ?? 0)}
+          </span>
+        </UsageCard>
+        <UsageCard label="Storage consumed" unit={storageUnit} isLoading={isLoading} isError={isError}>
+          <span className="text-2xl font-bold leading-tight">{storageDisplay.value}</span>
+        </UsageCard>
+        <UsageCard label="Charges" unit="Month to date" isLoading={isLoading} isError={isError} green>
+          <span className="text-2xl font-bold leading-tight">{totalCharges}</span>
+        </UsageCard>
+      </div>
+    </section>
   );
 }
 
-type UsageSummaryCardProps = {
+type UsageCardProps = {
   label: string;
-  value: string;
-  meta: string;
+  unit?: string;
   isLoading: boolean;
   isError: boolean;
+  green?: boolean;
+  children: React.ReactNode;
 };
 
-function UsageSummaryCard(props: UsageSummaryCardProps) {
-  let value = props.value;
-  let metaClassName = "text-sm opacity-70";
-
-  if (props.isLoading) {
-    value = "Loading";
-    metaClassName = "text-sm text-primary";
-  } else if (props.isError) {
-    value = "Unavailable";
-    metaClassName = "text-sm text-error";
-  }
+function UsageCard({ label, unit, isLoading, isError, green, children }: UsageCardProps) {
+  const base = "flex flex-col items-center justify-center gap-2 rounded-xl px-4 py-2.5";
+  const colors = green
+    ? "bg-success/10"
+    : "bg-base-200/60";
 
   return (
-    <div className="flex min-h-28 flex-col gap-1.5 rounded-lg border border-base-300 bg-base-200 px-4 py-4">
-      <div className="text-sm font-bold uppercase tracking-[0.08em]">{props.label}</div>
-      <div className="text-sm font-bold leading-none">{value}</div>
-      <div className={metaClassName}>{props.meta}</div>
+    <div className={`${base} ${colors}`}>
+      <div className="flex flex-col items-center gap-0.5">
+        <span className="text-xs font-medium opacity-50">{label}</span>
+        {unit && <span className="text-xs opacity-40">({unit})</span>}
+      </div>
+      <div className="flex items-baseline">
+        {isLoading ? (
+          <span className="text-sm opacity-40">—</span>
+        ) : isError ? (
+          <span className="text-sm text-error opacity-70">Unavailable</span>
+        ) : (
+          children
+        )}
+      </div>
     </div>
   );
 }

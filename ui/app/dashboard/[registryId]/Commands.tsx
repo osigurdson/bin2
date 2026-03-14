@@ -85,23 +85,16 @@ type ClientSelectProps = {
 
 function ClientSelect({ value, onChange }: ClientSelectProps) {
   return (
-    <div>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value as ClientType)}
-        className="
-        bg-transparent 
-        outline-none 
-        appearance-none 
-        cursor-pointer 
-        font-medium pr-2"
-      >
-        <option value="docker">docker⌄</option>
-        <option value="podman">podman⌄</option>
-        <option value="oras">oras⌄</option>
-        <option value="k8s">k8s⌄</option>
-      </select>
-    </div>
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value as ClientType)}
+      className="bg-transparent outline-none appearance-none cursor-pointer font-medium pr-2"
+    >
+      <option value="docker" className="bg-base-200 text-base-content">docker⌄</option>
+      <option value="podman" className="bg-base-200 text-base-content">podman⌄</option>
+      <option value="oras" className="bg-base-200 text-base-content">oras⌄</option>
+      <option value="k8s" className="bg-base-200 text-base-content">k8s⌄</option>
+    </select>
   );
 }
 

@@ -48,8 +48,8 @@ export function formatStorageMonthDisplay(valueGiBMonths: string): StorageMonthD
 
   return {
     value: new Intl.NumberFormat('en-US', {
-      minimumFractionDigits: 3,
-      maximumFractionDigits: 3,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(scaledValue),
     unit,
   };

@@ -28,7 +28,7 @@ export default async function RootLayout({
   void accessToken;
 
   return (
-    <html lang="en" className={`${spaceMono.className} ${spaceMono.variable}`} data-theme="light">
+    <html lang="en" className={`${spaceMono.className} ${spaceMono.variable}`}>
       <body>
         <AuthKitProvider initialAuth={auth}>
           {children}
