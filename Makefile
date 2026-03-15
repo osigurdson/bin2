@@ -28,7 +28,14 @@ PULL_DIR := pull
 
 LOAD_DOTENV = if [[ -f "$(DOTENV_FILE)" ]]; then set -a; source "$(DOTENV_FILE)"; set +a; fi;
 
-.PHONY: deploy-api deploy-init push-api deploy-ui deploy-pull api-logs ui-logs init-logs
+.PHONY: deploy-all deploy-api deploy-init push-api deploy-ui deploy-pull api-logs ui-logs init-logs
+
+# Deploys all production services in order.
+deploy-all:
+	$(MAKE) deploy-init
+	$(MAKE) deploy-api
+	$(MAKE) deploy-ui
+	$(MAKE) deploy-pull
 
 # Builds, containerizes, pushes and updates the image tag in Kubernetes
 deploy-api:
@@ -93,10 +100,14 @@ deploy-init:
 # Builds, containerizes, pushes and updates the image tag in Kubernetes
 deploy-ui:
 	$(LOAD_DOTENV) \
-	env_local_tmp="$(UI_DIR)/__env_local"; \
+	legacy_env_local_tmp="$(UI_DIR)/__env_local"; \
+	env_local_tmp="$$(mktemp)"; \
+	moved_env_local=0; \
 	restore_env_local() { \
-		if [[ -f "$$env_local_tmp" ]]; then \
+		if [[ "$$moved_env_local" == "1" && -f "$$env_local_tmp" ]]; then \
 			mv "$$env_local_tmp" "$(UI_DIR)/.env.local"; \
+		else \
+			rm -f "$$env_local_tmp"; \
 		fi; \
 	}; \
 	trap restore_env_local EXIT; \
@@ -111,16 +122,17 @@ deploy-ui:
 		echo "invalid $(UI_COUNT_FILE) value: $$tag"; \
 		exit 1; \
 	fi; \
-	if [[ -e "$$env_local_tmp" ]]; then \
-		echo "temporary env file already exists: $$env_local_tmp"; \
-		exit 1; \
+	if [[ ! -f "$(UI_DIR)/.env.local" && -f "$$legacy_env_local_tmp" ]]; then \
+		echo "restoring legacy env backup from $$legacy_env_local_tmp"; \
+		mv "$$legacy_env_local_tmp" "$(UI_DIR)/.env.local"; \
 	fi; \
 	if [[ -f "$(UI_DIR)/.env.local" ]]; then \
 		mv "$(UI_DIR)/.env.local" "$$env_local_tmp"; \
+		moved_env_local=1; \
 	fi; \
 	podman login "$(UI_REGISTRY)" -u "$$VULTR_CR_USERNAME" -p "$$VULTR_CR_PASSWORD"; \
 	echo "building $(UI_IMAGE_REPO):$$tag"; \
-	cd "$(UI_DIR)" && NODE_ENV=production npm run build; \
+	NODE_ENV=production npm --prefix "$(UI_DIR)" run build; \
 	podman build --quiet -t ui:"$$tag" "$(UI_DIR)"; \
 	podman tag ui:"$$tag" "$(UI_IMAGE_REPO):$$tag"; \
 	echo "pushing $(UI_IMAGE_REPO):$$tag"; \

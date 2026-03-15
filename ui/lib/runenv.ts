@@ -14,15 +14,11 @@ export interface RegistryInfo {
   isInsecure: boolean,
 }
 
-export function registryAddr(): string {
-  return isDev() ? 'localhost:5000' : 'bin2.nthesis.ai';
-}
-
 export function getRegistryInfo(): RegistryInfo {
   const addr = isDev() ? 'localhost:5000' : 'bin2.nthesis.ai';
   return {
     addr,
-    pullAddr: isDev() ? addr : `${addr}-pull`,
+    pullAddr: isDev() ? addr : 'bin2-pull.nthesis.ai',
     isInsecure: isDev(),
   };
 }
