@@ -10,11 +10,17 @@ export const metadata = {
 export default async function ContactPage() {
   const { user } = await withAuth();
   const signInUrl = await getSignInUrl();
+  const authenticatedIdentity = user?.email
+    ? {
+        name: user.firstName?.trim() || user.email,
+        email: user.email,
+      }
+    : null;
 
   return (
     <MarketingLayout user={user} signInUrl={signInUrl}>
       <div className="py-10">
-        <ContactForm />
+        <ContactForm authenticatedIdentity={authenticatedIdentity} />
       </div>
     </MarketingLayout>
   );

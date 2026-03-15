@@ -15,7 +15,13 @@ async function submitContactRequest(payload: ContactRequest) {
     body: JSON.stringify(payload),
   });
 
-  const data = await res.json();
+  let data: { ok?: boolean; error?: string } | null = null;
+  try {
+    data = (await res.json()) as { ok?: boolean; error?: string };
+  } catch {
+    data = null;
+  }
+
   if (!res.ok) {
     if (res.status === 409) {
       return;
@@ -28,10 +34,26 @@ async function submitContactRequest(payload: ContactRequest) {
   }
 }
 
-export default function ContactForm() {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+type ContactFormProps = {
+  authenticatedIdentity?: {
+    name: string;
+    email: string;
+  } | null;
+};
+
+const helpTopics = [
+  'Bug report',
+  'Question',
+  'Feature request',
+  'Other',
+] as const;
+
+export default function ContactForm({ authenticatedIdentity }: ContactFormProps) {
+  const isAuthenticatedFeedback = !!authenticatedIdentity?.email;
+  const [name, setName] = useState(authenticatedIdentity?.name ?? '');
+  const [email, setEmail] = useState(authenticatedIdentity?.email ?? '');
   const [message, setMessage] = useState('');
+  const [topic, setTopic] = useState<(typeof helpTopics)[number]>('Bug report');
   const [error, setError] = useState('');
   const [sent, setSent] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -75,13 +97,17 @@ export default function ContactForm() {
         name: trimmedName,
         email: trimmedEmail,
         message: trimmedMessage,
+        topic: isAuthenticatedFeedback ? topic : undefined,
+        source: isAuthenticatedFeedback ? 'dashboard-help-feedback' : 'public-contact',
       });
       setSent(true);
-      setName('');
-      setEmail('');
       setMessage('');
-    } catch {
-      setError('Error sending message.');
+      if (!isAuthenticatedFeedback) {
+        setName('');
+        setEmail('');
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Error sending message.');
     } finally {
       setIsSubmitting(false);
     }
@@ -93,41 +119,73 @@ export default function ContactForm() {
       onSubmit={handleSubmit}
     >
       <div className="flex flex-col gap-2">
-        <p className="text-xs uppercase tracking-[2px] text-base-content/40">Contact</p>
-        <h1 className="text-3xl font-bold">Get in touch</h1>
-        <p className="text-sm leading-6 text-base-content/60">
-          Questions, feedback, or something not working right? Send a note and we&apos;ll take a look.
+        <p className="text-xs uppercase tracking-[2px] text-base-content/40">
+          {isAuthenticatedFeedback ? 'Help & Feedback' : 'Contact'}
         </p>
+        <h1 className="text-3xl font-bold">
+          {isAuthenticatedFeedback ? 'Need help with bin2?' : 'Get in touch'}
+        </h1>
+        <p className="text-sm leading-6 text-base-content/60">
+          {isAuthenticatedFeedback
+            ? 'Tell us what is broken, confusing, or missing. We will get back to you right away.'
+            : "Questions, feedback, or something not working right? Send a note and we'll take a look."}
+        </p>
+        {isAuthenticatedFeedback && (
+          <p className="text-xs text-base-content/50">
+            Signed in as {authenticatedIdentity?.email}
+          </p>
+        )}
       </div>
 
-      <label className="flex flex-col gap-2 text-sm">
-        <span className="text-base-content/70">Name</span>
-        <input
-          type="text"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder="Your name"
-          className="border border-base-300 bg-transparent px-4 py-3 outline-none transition-colors focus:border-base-content"
-        />
-      </label>
+      {!isAuthenticatedFeedback && (
+        <label className="flex flex-col gap-2 text-sm">
+          <span className="text-base-content/70">Name</span>
+          <input
+            type="text"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Your name"
+            className="border border-base-300 bg-transparent px-4 py-3 outline-none transition-colors focus:border-base-content"
+          />
+        </label>
+      )}
+
+      {!isAuthenticatedFeedback && (
+        <label className="flex flex-col gap-2 text-sm">
+          <span className="text-base-content/70">Email (optional)</span>
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="you@example.com"
+            className="border border-base-300 bg-transparent px-4 py-3 outline-none transition-colors focus:border-base-content"
+          />
+        </label>
+      )}
+
+      {isAuthenticatedFeedback && (
+        <label className="flex flex-col gap-2 text-sm">
+          <span className="text-base-content/70">What is this about?</span>
+          <select
+            value={topic}
+            onChange={(event) => setTopic(event.target.value as (typeof helpTopics)[number])}
+            className="border border-base-300 bg-transparent px-4 py-3 outline-none transition-colors focus:border-base-content font-[inherit]"
+          >
+            {helpTopics.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <label className="flex flex-col gap-2 text-sm">
-        <span className="text-base-content/70">Email (optional)</span>
-        <input
-          type="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          placeholder="you@example.com"
-          className="border border-base-300 bg-transparent px-4 py-3 outline-none transition-colors focus:border-base-content"
-        />
-      </label>
-
-      <label className="flex flex-col gap-2 text-sm">
-        <span className="text-base-content/70">Message</span>
+        <span className="text-base-content/70">{isAuthenticatedFeedback ? 'Details' : 'Message'}</span>
         <textarea
           value={message}
           onChange={(event) => setMessage(event.target.value)}
-          placeholder="How can we help?"
+          placeholder={isAuthenticatedFeedback ? 'Describe the issue, question, or idea.' : 'How can we help?'}
           className="min-h-36 resize-none border border-base-300 bg-transparent px-4 py-3 outline-none transition-colors focus:border-base-content"
         />
       </label>
@@ -142,7 +200,7 @@ export default function ContactForm() {
           disabled={isSubmitting}
           className="inline-flex items-center justify-center border border-base-content bg-base-content px-4 py-2 text-base-100 transition-colors hover:bg-base-content/80 hover:border-base-content/80 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isSubmitting ? 'Sending...' : 'Send message'}
+          {isSubmitting ? 'Sending...' : isAuthenticatedFeedback ? 'Send feedback' : 'Send message'}
         </button>
       </div>
     </form>
