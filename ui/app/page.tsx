@@ -14,13 +14,13 @@ export default async function Home() {
         <p className="text-lg text-base-content/60 max-w-md">
           the ridiculously cheap, fast and simple container registry
         </p>
-        <a href="#pricing" className="inline-block bg-base-content text-base-100 px-8 py-3 no-underline hover:bg-base-content/80">
+        <a href="#how-it-works" className="inline-block bg-base-content text-base-100 px-8 py-3 no-underline hover:bg-base-content/80">
           learn more
         </a>
       </div>
 
       {/* How it works */}
-      <section className="py-[60px] border-t border-base-200">
+      <section id="how-it-works" className="scroll-mt-6 py-[60px] border-t border-base-200">
         <h2 className="text-xs uppercase tracking-[2px] text-base-content/40 mb-8">How it works</h2>
         <p className="text-base-content/60 mb-8 max-w-[680px]">
           bin<sub>2</sub>.io separates push and pull traffic so each is served by the

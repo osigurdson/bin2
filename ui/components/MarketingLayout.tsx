@@ -7,7 +7,7 @@ type MarketingLayoutProps = {
   children: React.ReactNode;
   user: { firstName?: string | null } | null;
   signInUrl: string;
-  activeNav?: "pricing" | "docs";
+  activeNav?: "docs";
 };
 
 export default function MarketingLayout({ children, user, signInUrl, activeNav }: MarketingLayoutProps) {
@@ -20,7 +20,6 @@ export default function MarketingLayout({ children, user, signInUrl, activeNav }
           bin<sub>2</sub>
         </Link>
         <nav className="flex items-center gap-6">
-          <Link href="/#pricing" className={`${navLink} ${activeNav === "pricing" ? "underline" : ""}`}>pricing</Link>
           <Link href="/docs" className={`${navLink} ${activeNav === "docs" ? "underline" : ""}`}>docs</Link>
           {user ? (
             <Link href="/dashboard" className={btn}>dashboard</Link>
