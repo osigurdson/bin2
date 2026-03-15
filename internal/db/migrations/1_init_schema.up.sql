@@ -130,8 +130,8 @@ CREATE TABLE usage_events (
   id UUID PRIMARY KEY,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   tenant_id UUID NOT NULL REFERENCES tenants(id),
-  registry_id UUID REFERENCES registries(id),
-  repo_id UUID REFERENCES repositories(id),
+  registry_id UUID REFERENCES registries(id) ON DELETE SET NULL,
+  repo_id UUID REFERENCES repositories(id) ON DELETE SET NULL,
   digest TEXT CHECK (digest ~ '^sha256:[a-f0-9]{64}$'),
   metric TEXT NOT NULL CHECK (metric IN ('storage-bytes', 'push-op-count', 'pull-op-count')),
   value BIGINT NOT NULL
