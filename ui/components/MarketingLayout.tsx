@@ -11,6 +11,8 @@ type MarketingLayoutProps = {
 };
 
 export default function MarketingLayout({ children, user, signInUrl, activeNav }: MarketingLayoutProps) {
+  const currentYear = new Date().getFullYear();
+
   return (
     <div className="max-w-3xl mx-auto px-5">
       <header className="flex justify-between items-center py-5 border-b border-base-200">
@@ -18,7 +20,7 @@ export default function MarketingLayout({ children, user, signInUrl, activeNav }
           bin<sub>2</sub>
         </Link>
         <nav className="flex items-center gap-6">
-          <a href="/#pricing" className={`${navLink} ${activeNav === "pricing" ? "underline" : ""}`}>pricing</a>
+          <Link href="/#pricing" className={`${navLink} ${activeNav === "pricing" ? "underline" : ""}`}>pricing</Link>
           <Link href="/docs" className={`${navLink} ${activeNav === "docs" ? "underline" : ""}`}>docs</Link>
           {user ? (
             <Link href="/dashboard" className={btn}>dashboard</Link>
@@ -32,8 +34,8 @@ export default function MarketingLayout({ children, user, signInUrl, activeNav }
 
       <footer className="border-t border-base-200 py-10 text-center text-base-content/40 text-sm">
         <p>
-          bin<sub>2</sub> &copy; 2025 &middot; <a href="#" className="text-base-content/60">terms</a> &middot;{" "}
-          <a href="#" className="text-base-content/60">privacy</a>
+          bin<sub>2</sub> &copy; {currentYear} &middot; <Link href="/terms" className="text-base-content/60">terms</Link> &middot;{" "}
+          <Link href="/privacy" className="text-base-content/60">privacy</Link>
         </p>
       </footer>
     </div>
