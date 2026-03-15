@@ -142,9 +142,9 @@ export default function Repositories({ registryId, registryName, selectedClient 
                     <div className="flex items-center justify-between gap-2">
                       <span>{repo.lastTag ?? <span className="opacity-40">-</span>}</span>
                       {repo.lastTag && (
-                        <div className="flex items-center shrink-0 rounded bg-base-300 px-1">
+                        <div className="flex items-center shrink-0 rounded bg-base-200/60 px-1">
                           <Tag size={11} className="opacity-40" />
-                          <ClipboardCopy copyText={pullCmd} className="btn btn-ghost btn-xs btn-square" />
+                          <ClipboardCopy copyText={pullCmd} className="btn btn-ghost btn-xs btn-square text-base-content/45 hover:text-base-content/70" />
                         </div>
                       )}
                     </div>

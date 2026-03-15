@@ -1,11 +1,19 @@
 'use client';
 
 import ClipboardCopy from "@/components/ClipboardCopy";
-import { useState } from "react";
+import { ChevronDown, Check } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { APIKey } from "@/api/apikeys/types";
 import { getRegistryInfo } from "@/lib/runenv";
 
 export type ClientType = 'docker' | 'podman' | 'oras' | 'k8s';
+
+const clientOptions: { value: ClientType; label: string }[] = [
+  { value: 'docker', label: 'docker' },
+  { value: 'podman', label: 'podman' },
+  { value: 'oras', label: 'oras' },
+  { value: 'k8s', label: 'k8s' },
+];
 
 type CommandProps = {
   id: string;
@@ -48,7 +56,7 @@ export default function Commands(props: CommandProps) {
         <select
           value={activeKey?.id ?? ''}
           onChange={e => setSelectedKeyId(e.target.value)}
-          className="bg-transparent outline-none appearance-none cursor-pointer text-sm"
+          className="bg-transparent outline-none appearance-none cursor-pointer text-sm font-[inherit]"
         >
           {props.apiKeys.map(k => (
             <option key={k.id} value={k.id}>{k.keyName}</option>
@@ -84,17 +92,65 @@ type ClientSelectProps = {
 }
 
 function ClientSelect({ value, onChange }: ClientSelectProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const selectedOption = clientOptions.find((option) => option.value === value) ?? clientOptions[0];
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value as ClientType)}
-      className="bg-transparent outline-none appearance-none cursor-pointer font-medium pr-2"
-    >
-      <option value="docker" className="bg-base-200 text-base-content">docker⌄</option>
-      <option value="podman" className="bg-base-200 text-base-content">podman⌄</option>
-      <option value="oras" className="bg-base-200 text-base-content">oras⌄</option>
-      <option value="k8s" className="bg-base-200 text-base-content">k8s⌄</option>
-    </select>
+    <div ref={rootRef} className="relative mr-2">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        className="inline-flex items-center gap-1 text-[13px] font-medium leading-none text-base-content/80 hover:text-base-content focus-visible:outline-none"
+        onClick={() => setIsOpen((current) => !current)}
+      >
+        <span>{selectedOption.label}</span>
+        <ChevronDown size={13} aria-hidden className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      {isOpen && (
+        <div className="absolute left-0 top-full z-20 mt-2 min-w-24 rounded-md border border-base-300 bg-base-100 p-1 shadow-sm">
+          {clientOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className="flex w-full items-center justify-between gap-3 rounded px-2 py-1.5 text-left text-[13px] text-base-content/80 hover:bg-base-200"
+              onClick={() => {
+                onChange(option.value);
+                setIsOpen(false);
+              }}
+            >
+              <span>{option.label}</span>
+              <span className="w-3">
+                {option.value === value ? <Check size={13} aria-hidden /> : null}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
