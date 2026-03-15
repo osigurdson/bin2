@@ -34,7 +34,8 @@ export default function MarketingLayout({ children, user, signInUrl, activeNav }
 
       <footer className="border-t border-base-200 py-10 text-center text-base-content/40 text-sm">
         <p>
-          bin<sub>2</sub> &copy; {currentYear} &middot; <Link href="/terms" className="text-base-content/60">terms</Link> &middot;{" "}
+          bin<sub>2</sub> &copy; {currentYear} &middot; <Link href="/contact" className="text-base-content/60">contact</Link> &middot;{" "}
+          <Link href="/terms" className="text-base-content/60">terms</Link> &middot;{" "}
           <Link href="/privacy" className="text-base-content/60">privacy</Link>
         </p>
       </footer>

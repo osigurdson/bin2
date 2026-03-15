@@ -97,7 +97,7 @@ export default function Dashboard() {
 
         {registries.length === 0 ? (
           <div className="flex min-h-40 items-center justify-center rounded-xl border border-base-300 bg-base-100 px-4 py-6 text-center">
-            <p className="text-sm opacity-60">No registries yet. Use "New registry" button (above) to create one.</p>
+            <p className="text-sm opacity-60">No registries yet. Use the &quot;New registry&quot; button above to create one.</p>
           </div>
         ) : (
           <ul className="flex flex-col">
