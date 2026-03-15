@@ -22,7 +22,9 @@ export default function Header() {
   return (
     <div className="flex justify-between items-center">
       <Link href="/dashboard" className="logo-mark"><Logo /></Link>
-      <div>
+      <div className="flex items-center gap-4">
+        <a href="/docs" target="_blank" rel="noopener noreferrer" className="text-[11px] opacity-50 hover:opacity-100 transition-opacity">Docs</a>
+        <a href="#" className="text-[11px] opacity-50 hover:opacity-100 transition-opacity">Help & Feedback</a>
         {user && (
           <div className="dropdown dropdown-end">
             <div
