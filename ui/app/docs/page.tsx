@@ -1,7 +1,6 @@
-import Link from "next/link";
 import { getSignInUrl, withAuth } from "@workos-inc/authkit-nextjs";
-import styles from "../page.module.css";
 import { pricing, pricingDisplay } from "@/lib/pricing";
+import MarketingLayout from "@/components/MarketingLayout";
 
 export const metadata = {
   title: "docs – bin2",
@@ -12,22 +11,7 @@ export default async function DocsPage() {
   const signInUrl = await getSignInUrl();
 
   return (
-    <div className={styles.container}>
-      <header className={styles.header}>
-        <Link className={styles.logo} href="/">
-          bin<sub>2</sub>
-        </Link>
-        <nav className={styles.nav}>
-          <a href="/#pricing" className={styles.navLink}>pricing</a>
-          <Link href="/docs" className={`${styles.navLink} underline`}>docs</Link>
-          {user ? (
-            <Link href="/dashboard" className={styles.btn}>dashboard</Link>
-          ) : (
-            <a href={signInUrl} className={styles.btn}>login</a>
-          )}
-        </nav>
-      </header>
-
+    <MarketingLayout user={user} signInUrl={signInUrl} activeNav="docs">
       <div className="flex flex-col gap-10 py-10">
 
         {/* How it works */}
@@ -61,7 +45,7 @@ export default async function DocsPage() {
         {/* Pricing */}
         <section className="flex flex-col gap-6">
           <div className="flex flex-col gap-2">
-            <h2 className={styles.sectionTitle}>Pricing</h2>
+            <h2 className="text-xs uppercase tracking-[2px] text-[#999]">Pricing</h2>
             <p className="text-[#666]">
               bin<sub>2</sub>.io is designed to be a low-cost, commodity container registry.
               Pricing is based only on operations that incur real infrastructure costs.
@@ -73,8 +57,8 @@ export default async function DocsPage() {
             {/* Push */}
             <div className="flex flex-col gap-2 py-6 first:pt-0">
               <h3 className="font-bold">Push Operations</h3>
-              <p className="text-xl font-bold">${pricing.pushOpsPerMillion} <span className="text-sm font-normal text-[#999]">per million operations</span></p>
-              <ul className="text-[#666] flex flex-col gap-1 mt-1">
+              <p className="text-lg font-bold">${pricing.pushOpsPerMillion} <span className="text-sm font-normal text-[#999]">per million operations</span></p>
+              <ul className="text-sm text-[#666] flex flex-col gap-1 mt-1">
                 <li>– Docker images and ORAS artifacts consist of multiple layers.</li>
                 <li>– Each pushed layer counts as one push operation.</li>
                 <li>– Layers larger than 100 MiB incur one additional operation per 100 MiB.</li>
@@ -84,8 +68,8 @@ export default async function DocsPage() {
             {/* Storage */}
             <div className="flex flex-col gap-2 py-6">
               <h3 className="font-bold">Storage</h3>
-              <p className="text-xl font-bold">{pricingDisplay.storage}</p>
-              <ul className="text-[#666] flex flex-col gap-1 mt-1">
+              <p className="text-lg font-bold">{pricingDisplay.storage}</p>
+              <ul className="text-sm text-[#666] flex flex-col gap-1 mt-1">
                 <li>– Billed in GiB-months using 30-day months.</li>
                 <li>– Example: 10 GiB stored for half a month = 5 GiB-months = $0.10.</li>
               </ul>
@@ -98,7 +82,7 @@ export default async function DocsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="border border-[#e8e8e8] p-4 flex flex-col gap-2">
                   <p className="font-bold">CDN endpoint — pull.bin<sub>2</sub>.io</p>
-                  <ul className="text-[#666] flex flex-col gap-1">
+                  <ul className="text-sm text-[#666] flex flex-col gap-1">
                     <li>– 1 pull operation per layer</li>
                     <li>– No egress fees</li>
                     <li>– {pricingDisplay.cdnPulls}</li>
@@ -106,7 +90,7 @@ export default async function DocsPage() {
                 </div>
                 <div className="border border-[#e8e8e8] p-4 flex flex-col gap-2">
                   <p className="font-bold">Origin endpoint — bin<sub>2</sub>.io</p>
-                  <ul className="text-[#666] flex flex-col gap-1">
+                  <ul className="text-sm text-[#666] flex flex-col gap-1">
                     <li>– 10 pull operations per layer</li>
                     <li>– $0.02 per GiB bandwidth</li>
                   </ul>
@@ -118,7 +102,7 @@ export default async function DocsPage() {
             <div className="flex flex-col gap-4 py-6">
               <h3 className="font-bold">Free Tier</h3>
               <div className="border border-[#111] p-5 flex flex-col gap-2">
-                <p className="text-xl font-bold">{pricingDisplay.freeCredit} <span className="text-sm font-normal text-[#999]">free usage per month, every account</span></p>
+                <p className="text-lg font-bold">{pricingDisplay.freeCredit} <span className="text-sm font-normal text-[#999]">free usage per month, every account</span></p>
                 <p className="text-[#666]">
                   For hobbyists, home labs, and small startups, this will often cover typical usage entirely.
                 </p>
@@ -134,7 +118,7 @@ export default async function DocsPage() {
           <p className="text-[#666]">
             10 CI builds per day, each producing 6 layers. 15 GiB stored. 300 CDN pulls per day.
           </p>
-          <table className="w-full border-collapse">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-[#e8e8e8]">
                 <th className="text-left py-2 pr-4 font-normal text-[#999]">Item</th>
@@ -178,13 +162,6 @@ export default async function DocsPage() {
         </section>
 
       </div>
-
-      <footer className={styles.footer}>
-        <p>
-          bin<sub>2</sub> &copy; 2025 &middot; <a href="#">terms</a> &middot;{" "}
-          <a href="#">privacy</a>
-        </p>
-      </footer>
-    </div>
+    </MarketingLayout>
   );
 }
