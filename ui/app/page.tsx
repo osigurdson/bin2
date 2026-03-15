@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getSignInUrl, withAuth } from "@workos-inc/authkit-nextjs";
 import styles from "./page.module.css";
+import { pricing, pricingDisplay } from "@/lib/pricing";
 
 export default async function Home() {
   const { user } = await withAuth();
@@ -14,127 +15,130 @@ export default async function Home() {
             bin<sub>2</sub>
           </Link>
           <nav className={styles.nav}>
-            <a href="#pricing" className={styles.navLink}>
-              pricing
-            </a>
-            <Link href="/docs" className={styles.navLink}>
-              docs
-            </Link>
+            <a href="#pricing" className={styles.navLink}>pricing</a>
+            <Link href="/docs" className={styles.navLink}>docs</Link>
             {user ? (
-              <Link href="/dashboard" className={styles.btn}>
-                dashboard
-              </Link>
+              <Link href="/dashboard" className={styles.btn}>dashboard</Link>
             ) : (
-              <a href={signInUrl} className={styles.btn}>
-                login
-              </a>
+              <a href={signInUrl} className={styles.btn}>login</a>
             )}
           </nav>
         </header>
 
         <div className={styles.hero}>
-          <h1>
-            bin<sub>2</sub>
-          </h1>
+          <h1>bin<sub>2</sub></h1>
           <p className={styles.tagline}>
             the ridiculously cheap, fast and simple container registry
           </p>
-          <a href="#pricing" className={styles.cta}>
-            see pricing
-          </a>
+          <a href="#pricing" className={styles.cta}>see pricing</a>
         </div>
       </div>
 
+      {/* How it works */}
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>How it works</h2>
+        <p className={styles.subtitle}>
+          bin<sub>2</sub>.io separates push and pull traffic so each is served by the
+          right infrastructure. All pull traffic is served by a global, low
+          cost / high performance CDN.
+        </p>
+      </section>
+
+      {/* Pricing */}
       <section id="pricing" className={styles.section}>
         <h2 className={styles.sectionTitle}>Pricing</h2>
+        <p className={styles.subtitle}>
+          Pay only for what you use. Every account receives {pricingDisplay.freeCredit} of
+          free usage per month. Docker images / ORAS artifacts consist of one
+          or more layers. Pricing is based on layer operations and storage used.
+        </p>
         <div className={styles.tiers}>
           <div className={styles.tier}>
-            <h3>Free</h3>
+            <h3>Push ops</h3>
             <div className={styles.price}>
-              $0<span>/mo</span>
+              ${pricing.pushOpsPerMillion}<span>/M ops</span>
             </div>
             <ul>
-              <li>1 GB storage</li>
-              <li>Unlimited pulls</li>
-              <li>1 private repo</li>
+              <li>Per layer pushed</li>
+              <li>+1 op per {pricing.pushOpOverageMiBThreshold} MiB over {pricing.pushOpOverageMiBThreshold} MiB</li>
             </ul>
           </div>
-
           <div className={styles.tier}>
-            <h3>Starter</h3>
+            <h3>Pull ops</h3>
             <div className={styles.price}>
-              $5<span>/mo</span>
+              ${pricing.cdnPullOpsPerMillion}<span>/M ops</span>
             </div>
             <ul>
-              <li>100 GB storage</li>
-              <li>Unlimited pulls</li>
-              <li>Unlimited repos</li>
+              <li>Per layer pulled</li>
+              <li>Via pull.bin<sub>2</sub>.io</li>
+              <li>No egress fees</li>
             </ul>
           </div>
-
           <div className={styles.tier}>
-            <h3>Enterprise</h3>
-            <div className={styles.price}>Call</div>
+            <h3>Storage</h3>
+            <div className={styles.price}>
+              ${pricing.storagePerGiBMonth.toFixed(2)}<span>/GiB-mo</span>
+            </div>
             <ul>
-              <li>Unlimited storage</li>
-              <li>Unlimited pulls</li>
-              <li>Priority support</li>
-              <li>Host in your own Cloudflare account</li>
+              <li>30-day months</li>
+              <li>Time-weighted billing</li>
             </ul>
           </div>
         </div>
       </section>
 
-      <section id="pricing-explainer" className={styles.section}>
-        <h2 className={styles.sectionTitle}>
-          Why is it the cheapest and the fastest?
-        </h2>
+      {/* Example */}
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>Example</h2>
         <p className={styles.subtitle}>
-          Container storage ought to be a commodity. We treat it that way and
-          remove the expensive parts of the pipeline and leverage Cloudflare&apos;s
-          global CDN for incredible speed.
+          10 CI builds per day, each producing 6 layers. 15 GiB stored. 300 CDN pulls per day.
         </p>
-        <div className={styles.explainer}>
-          <div>
-            <h3>Direct to R2</h3>
-            <p>
-              Standard registries write layers to registry storage first, then
-              sync to object storage. bin2 streams layers straight to Cloudflare
-              R2 during build, so there&apos;s no double-storage or internal
-              bandwidth.
-            </p>
-          </div>
-          <div>
-            <h3>R2 economics</h3>
-            <p>
-              R2 is Cloudflare&apos;s hyper-competitive S3-equivalent storage, and
-              Cloudflare doesn&apos;t charge for egress. With the data path built
-              around R2 from day one, the cost floor is fundamentally lower than
-              registries built on S3-style storage.
-            </p>
-          </div>
-          <div>
-            <h3>CLI-optimized push</h3>
-            <p>
-              Standard push clients expect the classic registry upload
-              endpoints. Our CLI uses the R2-native push path and still gives
-              you everything you need to build, tag, and manage images.
-            </p>
-          </div>
-          <div>
-            <h3>Your Cloudflare account</h3>
-            <p>
-              You can use our SaaS or host it yourself. We provide the logic,
-              Cloudflare provides the infrastructure, and you own all the data
-              in your own account with the same R2-native architecture.
-            </p>
-          </div>
-        </div>
+        <table className={styles.exampleTable}>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Usage</th>
+              <th>Cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Push operations</td>
+              <td>10 × 6 × 30 = 1,800 ops</td>
+              <td>$0.02</td>
+            </tr>
+            <tr>
+              <td>Storage</td>
+              <td>15 GiB × 1 month</td>
+              <td>$0.30</td>
+            </tr>
+            <tr>
+              <td>Pull operations (CDN)</td>
+              <td>300 × 6 × 30 = 54,000 ops</td>
+              <td>$0.11</td>
+            </tr>
+            <tr className={styles.exampleTableSubtotal}>
+              <td>Subtotal</td>
+              <td></td>
+              <td>$0.43</td>
+            </tr>
+            <tr>
+              <td>Free tier credit</td>
+              <td></td>
+              <td>−{pricingDisplay.freeCredit}</td>
+            </tr>
+            <tr className={styles.exampleTableTotal}>
+              <td>Total</td>
+              <td></td>
+              <td>$0.00</td>
+            </tr>
+          </tbody>
+        </table>
       </section>
 
       <footer className={styles.footer}>
         <p>
-          bin2 &copy; 2025 &middot; <a href="#">terms</a> &middot;{" "}
+          bin<sub>2</sub> &copy; 2025 &middot; <a href="#">terms</a> &middot;{" "}
           <a href="#">privacy</a>
         </p>
       </footer>

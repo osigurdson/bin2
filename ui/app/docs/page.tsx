@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getSignInUrl, withAuth } from "@workos-inc/authkit-nextjs";
 import styles from "../page.module.css";
+import { pricing, pricingDisplay } from "@/lib/pricing";
 
 export const metadata = {
   title: "docs – bin2",
@@ -72,7 +73,7 @@ export default async function DocsPage() {
             {/* Push */}
             <div className="flex flex-col gap-2 py-6 first:pt-0">
               <h3 className="font-bold">Push Operations</h3>
-              <p className="text-xl font-bold">$10 <span className="text-sm font-normal text-[#999]">per million operations</span></p>
+              <p className="text-xl font-bold">${pricing.pushOpsPerMillion} <span className="text-sm font-normal text-[#999]">per million operations</span></p>
               <ul className="text-[#666] flex flex-col gap-1 mt-1">
                 <li>– Docker images and ORAS artifacts consist of multiple layers.</li>
                 <li>– Each pushed layer counts as one push operation.</li>
@@ -83,7 +84,7 @@ export default async function DocsPage() {
             {/* Storage */}
             <div className="flex flex-col gap-2 py-6">
               <h3 className="font-bold">Storage</h3>
-              <p className="text-xl font-bold">$0.02 <span className="text-sm font-normal text-[#999]">per GiB-month</span></p>
+              <p className="text-xl font-bold">{pricingDisplay.storage}</p>
               <ul className="text-[#666] flex flex-col gap-1 mt-1">
                 <li>– Billed in GiB-months using 30-day months.</li>
                 <li>– Example: 10 GiB stored for half a month = 5 GiB-months = $0.10.</li>
@@ -100,7 +101,7 @@ export default async function DocsPage() {
                   <ul className="text-[#666] flex flex-col gap-1">
                     <li>– 1 pull operation per layer</li>
                     <li>– No egress fees</li>
-                    <li>– $2 per million operations</li>
+                    <li>– {pricingDisplay.cdnPulls}</li>
                   </ul>
                 </div>
                 <div className="border border-[#e8e8e8] p-4 flex flex-col gap-2">
@@ -117,7 +118,7 @@ export default async function DocsPage() {
             <div className="flex flex-col gap-4 py-6">
               <h3 className="font-bold">Free Tier</h3>
               <div className="border border-[#111] p-5 flex flex-col gap-2">
-                <p className="text-xl font-bold">$1.00 <span className="text-sm font-normal text-[#999]">free usage per month, every account</span></p>
+                <p className="text-xl font-bold">{pricingDisplay.freeCredit} <span className="text-sm font-normal text-[#999]">free usage per month, every account</span></p>
                 <p className="text-[#666]">
                   For hobbyists, home labs, and small startups, this will often cover typical usage entirely.
                 </p>
