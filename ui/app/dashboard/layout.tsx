@@ -11,14 +11,16 @@ export default async function Layout({ children }: { children: React.ReactNode }
 
         {/* Header */}
         <div className="w-full">
-          <div className="max-w-3xl mx-auto px-4">
-            <Header />
+          <div className="max-w-3xl mx-auto px-5">
+            <div className="border-b border-base-200 py-5">
+              <Header />
+            </div>
           </div>
         </div>
 
         {/* Main */}
         <div className="flex-1 w-full">
-          <div className="max-w-3xl mx-auto px-4 py-6">
+          <div className="max-w-3xl mx-auto px-5 py-10">
             {children}
           </div>
         </div>

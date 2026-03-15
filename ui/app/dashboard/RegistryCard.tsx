@@ -14,14 +14,14 @@ export default function RegistryCard(props: RegistryCardProps) {
   const isEmpty = !props.sizeBytes || props.sizeBytes === 0;
 
   return (
-    <div className="flex items-center gap-3 border-b border-base-content/10 px-1 py-1.5">
+    <div className="flex items-center gap-3 border-b border-base-content/10 px-1 py-2.5">
       <Link
         href={`/dashboard/${props.id}`}
         className="min-w-0 flex-1 flex items-center gap-3"
       >
         <b>{props.name}</b>
       </Link>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-4">
         {isEmpty ? (
           <span className="text-sm italic opacity-40">Empty</span>
         ) : (

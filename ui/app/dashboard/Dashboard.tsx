@@ -81,8 +81,12 @@ export default function Dashboard() {
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-widest opacity-40">Registries</span>
             {registries.length > 0 && (
-              <span className="badge badge-ghost badge-sm opacity-60">
-                {registries.length} {registries.length === 1 ? 'registry' : 'registries'}
+              <span
+                className="badge badge-ghost badge-sm opacity-60"
+                aria-label={`${registries.length} ${registries.length === 1 ? 'registry' : 'registries'}`}
+                title={`${registries.length} ${registries.length === 1 ? 'registry' : 'registries'}`}
+              >
+                {registries.length}
               </span>
             )}
           </div>
@@ -116,7 +120,9 @@ export default function Dashboard() {
       </section>
 
       {/* Usage section */}
-      <MonthlyUsagePanel />
+      <div className="mt-4">
+        <MonthlyUsagePanel />
+      </div>
 
       <ConfirmModal
         isOpen={!!registryPendingConfirm}
