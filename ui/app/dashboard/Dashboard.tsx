@@ -76,7 +76,7 @@ export default function Dashboard() {
     <div className="flex w-full flex-col gap-8">
 
       {/* Registries section */}
-      <section>
+      <section className="min-h-56">
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-widest opacity-40">Registries</span>
@@ -96,11 +96,8 @@ export default function Dashboard() {
         </div>
 
         {registries.length === 0 ? (
-          <div className="rounded-xl border border-base-300 bg-base-100 px-4 py-6 text-center">
-            <p className="text-sm opacity-60">No registries yet.</p>
-            <Link href="/dashboard/newRegistry" className="btn btn-primary btn-sm mt-4">
-              Create First Registry
-            </Link>
+          <div className="flex min-h-40 items-center justify-center rounded-xl border border-base-300 bg-base-100 px-4 py-6 text-center">
+            <p className="text-sm opacity-60">No registries yet. Use "New registry" button (above) to create one.</p>
           </div>
         ) : (
           <ul className="flex flex-col">
