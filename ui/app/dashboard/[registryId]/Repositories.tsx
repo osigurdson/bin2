@@ -97,7 +97,7 @@ export default function Repositories({ registryId, registryName, selectedClient 
 
   if (repos.length === 0) {
     return (
-      <div className="p-2 space-y-3">
+      <div className="mt-8">
         <RepositoryHeader onRefresh={() => refetch()} isRefreshing={isRefreshing} />
         <div className="p-3">
           <InstrComponent addr={addr} registry={registryName} isInsecure={isInsecure} />
@@ -119,7 +119,7 @@ export default function Repositories({ registryId, registryName, selectedClient 
   }
 
   return (
-    <div className="p-2">
+    <div className="mt-8">
       <RepositoryHeader onRefresh={() => refetch()} isRefreshing={isRefreshing} />
       <div className="p-1">
         <table className="w-full">
@@ -217,8 +217,8 @@ function buildPullCommand(client: ClientType, pullAddr: string, registry: string
   switch (client) {
     case 'docker': return `docker pull ${imageUri}`;
     case 'podman': return `podman pull${isInsecure ? ' --tls-verify=false' : ''} ${imageUri}`;
-    case 'oras':   return `oras pull${isInsecure ? ' --plain-http' : ''} ${imageUri}`;
-    case 'k8s':    return `image: ${imageUri}`;
+    case 'oras': return `oras pull${isInsecure ? ' --plain-http' : ''} ${imageUri}`;
+    case 'k8s': return `image: ${imageUri}`;
   }
 }
 

@@ -24,7 +24,7 @@ export default function RegistryView({ registryId }: { registryId: string }) {
   return (
     <div className="space-y-6">
       <div className="mb-4">
-        <span>Registry: <b>bin2.io/{registry.name}</b> <RegistrySizeDisplay sizeBytes={registry.sizeBytes} /></span>
+        <span><span className="text-lg">Registry: </span><b>bin2.io/{registry.name}</b> <RegistrySizeDisplay sizeBytes={registry.sizeBytes} /></span>
       </div>
       <Commands
         id={registry.id}
