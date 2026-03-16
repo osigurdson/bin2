@@ -39,11 +39,12 @@ export default function Commands(props: CommandProps) {
   const password = activeKey?.secretKey ?? '';
   const cliLoginCommand = `${client} login ${tlsVerifyStr} ${addr} -u ${regUsername} -p ${password}`;
   const pullSecretName = `${props.name}-pull-secret`;
-  const pullSecretYaml = buildPullSecretYaml({
+  const pullSecret = buildPullSecret({
     name: pullSecretName,
     username: regUsername,
     password,
   });
+  const pullSecretYaml = pullSecret.yaml;
   const maskedPullSecretYamlHeader = buildMaskedPullSecretYamlHeader({
     name: pullSecretName,
   });
@@ -56,9 +57,16 @@ export default function Commands(props: CommandProps) {
         {client === 'k8s' ? (
           <>
             <div className="text-xs font-mono flex-1 whitespace-pre">
-              {maskedPullSecretYamlHeader}{"\n  .dockerconfigjson: "}<PasswordArea activeKey={activeKey} registryId={props.id} registryName={props.name} />
+              {maskedPullSecretYamlHeader}{"\n  .dockerconfigjson: "}
+              <PasswordArea
+                activeKey={activeKey}
+                registryId={props.id}
+                registryName={props.name}
+                copyText={pullSecret.dockerConfigJsonBase64}
+                copyTitle="Copy .dockerconfigjson"
+              />
             </div>
-            <ClipboardCopy copyText={pullSecretYaml} />
+            {activeKey && <ClipboardCopy copyText={pullSecretYaml} />}
           </>
         ) : (
           <>
@@ -76,10 +84,12 @@ type PasswordAreaProps = {
   activeKey: APIKey | undefined;
   registryId: string;
   registryName: string;
+  copyText?: string;
+  copyTitle?: string;
 };
 
 // AKIA — API Key Interaction Area
-function PasswordArea({ activeKey, registryId, registryName }: PasswordAreaProps) {
+function PasswordArea({ activeKey, registryId, registryName, copyText, copyTitle = 'Copy key' }: PasswordAreaProps) {
   const [open, setOpen] = useState(false);
   const [showRotateConfirm, setShowRotateConfirm] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -118,7 +128,7 @@ function PasswordArea({ activeKey, registryId, registryName }: PasswordAreaProps
 
   async function handleCopy() {
     if (!activeKey) return;
-    await navigator.clipboard.writeText(activeKey.secretKey);
+    await navigator.clipboard.writeText(copyText ?? activeKey.secretKey);
     setCopied(true);
     if (copyTimer.current) clearTimeout(copyTimer.current);
     copyTimer.current = setTimeout(() => setCopied(false), 2000);
@@ -176,7 +186,7 @@ function PasswordArea({ activeKey, registryId, registryName }: PasswordAreaProps
               <>
                 <button
                   type="button"
-                  title="Copy key"
+                  title={copyTitle}
                   onClick={handleCopy}
                   className="flex items-center rounded px-2 py-1.5 text-base-content/80 hover:bg-base-200"
                 >
@@ -287,7 +297,7 @@ function ClientSelect({ value, onChange }: ClientSelectProps) {
   );
 }
 
-function buildPullSecretYaml({
+function buildPullSecret({
   name,
   username,
   password,
@@ -309,15 +319,18 @@ function buildPullSecretYaml({
   });
   const dockerConfigJsonBase64 = btoa(dockerConfigJson);
 
-  return [
-    "apiVersion: v1",
-    "kind: Secret",
-    "metadata:",
-    `  name: ${name}`,
-    "type: kubernetes.io/dockerconfigjson",
-    "data:",
-    `  .dockerconfigjson: ${dockerConfigJsonBase64}`,
-  ].join("\n");
+  return {
+    dockerConfigJsonBase64,
+    yaml: [
+      "apiVersion: v1",
+      "kind: Secret",
+      "metadata:",
+      `  name: ${name}`,
+      "type: kubernetes.io/dockerconfigjson",
+      "data:",
+      `  .dockerconfigjson: ${dockerConfigJsonBase64}`,
+    ].join("\n"),
+  };
 }
 
 function buildMaskedPullSecretYamlHeader({
