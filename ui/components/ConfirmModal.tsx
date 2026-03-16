@@ -17,7 +17,7 @@ export default function ConfirmModal(props: ConfirmModalProps) {
   }
 
   return (
-    <div className="modal modal-open" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+    <div className="modal modal-open whitespace-normal text-base font-sans" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
       <div className="modal-box">
         <h3 id="confirm-modal-title" className="text-lg font-bold">
           {props.title ?? 'Confirm'}

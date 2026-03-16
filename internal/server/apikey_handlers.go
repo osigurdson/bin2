@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 )
 
-var keyNameRe = regexp.MustCompile(`^[A-Za-z0-9._-]{2,8}$`)
+var keyNameRe = regexp.MustCompile(`^[A-Za-z0-9._-]{2,32}$`)
 
 type createAPIKeyRequest struct {
 	KeyName string              `json:"keyName"`
@@ -82,7 +82,7 @@ func (s *Server) addAPIKeyHandler(c *gin.Context) {
 	}
 
 	if !keyNameRe.MatchString(req.KeyName) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Must be 2-8 chars of letters, numbers, '.', '_' or '-'"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Must be 2-32 chars of letters, numbers, '.', '_' or '-'"})
 		return
 	}
 
