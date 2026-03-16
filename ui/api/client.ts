@@ -1,8 +1,4 @@
-import { isDev } from '../lib/runenv';
-
-function getBackendApiOrigin(): string {
-  return isDev() ? 'http://localhost:5000' : 'https://bin2.nthesis.ai';
-}
+import { getBackendApiOrigin } from '../lib/runenv';
 
 export function apiV1Url(path: string): string {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;

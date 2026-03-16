@@ -3,14 +3,14 @@ main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
 routes = [
-  { pattern = "bin2-pull.nthesis.ai", custom_domain = true }
+  { pattern = "pull.bin2.io", custom_domain = true }
 ]
 
 [vars]
-REGISTRY_SERVICE = "bin2.nthesis.ai"
-REGISTRY_TOKEN_REALM = "https://bin2.nthesis.ai/v2/token"
-REGISTRY_JWKS_URL = "https://bin2.nthesis.ai/.well-known/jwks.json"
-REGISTRY_API_ORIGIN = "https://bin2.nthesis.ai"
+REGISTRY_SERVICE = "bin2.io"
+REGISTRY_TOKEN_REALM = "https://bin2.io/v2/token"
+REGISTRY_JWKS_URL = "https://bin2.io/.well-known/jwks.json"
+REGISTRY_API_ORIGIN = "https://bin2.io"
 
 # USAGE_INGEST_SECRET must be set via: wrangler secret put USAGE_INGEST_SECRET
 # It must match the USAGE_INGEST_SECRET env var on the Go API.

@@ -15,14 +15,18 @@ export interface RegistryInfo {
 }
 
 export function getRegistryInfo(): RegistryInfo {
-  const addr = isDev() ? 'localhost:5000' : 'bin2.nthesis.ai';
+  const addr = isDev() ? 'localhost:5000' : 'bin2.io';
   return {
     addr,
-    pullAddr: isDev() ? addr : 'bin2-pull.nthesis.ai',
+    pullAddr: isDev() ? addr : 'pull.bin2.io',
     isInsecure: isDev(),
   };
 }
 
 export function getSignoutRedirect(): string {
-  return isDev() ? 'http://localhost:3000' : 'https://bin2.nthesis.ai';
+  return isDev() ? 'http://localhost:3000' : 'https://bin2.io';
+}
+
+export function getBackendApiOrigin(): string {
+  return isDev() ? 'http://localhost:5000' : 'https://bin2.io';
 }
