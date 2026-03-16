@@ -26,7 +26,7 @@ type CommandProps = {
 }
 
 export default function Commands(props: CommandProps) {
-  const { addr, isInsecure } = getRegistryInfo();
+  const { addr, pullAddr, isInsecure } = getRegistryInfo();
   const client = props.selectedClient;
   const activeKey = props.apiKeys[0];
 
@@ -43,6 +43,7 @@ export default function Commands(props: CommandProps) {
     name: pullSecretName,
     username: regUsername,
     password,
+    registry: pullAddr,
   });
   const pullSecretYaml = pullSecret.yaml;
   const maskedPullSecretYamlHeader = buildMaskedPullSecretYamlHeader({
@@ -301,12 +302,13 @@ function buildPullSecret({
   name,
   username,
   password,
+  registry,
 }: {
   name: string;
   username: string;
   password: string;
+  registry: string;
 }) {
-  const registry = "bin2.io";
   const auth = btoa(`${username}:${password}`);
   const dockerConfigJson = JSON.stringify({
     auths: {
