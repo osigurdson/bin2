@@ -1,8 +1,10 @@
 import { getSignInUrl, withAuth } from "@workos-inc/authkit-nextjs";
 import { pricing, pricingDisplay } from "@/lib/pricing";
+import Bin2FlowDiagram from "@/components/Bin2FlowDiagram";
 import MarketingLayout from "@/components/MarketingLayout";
+import { Metadata } from 'next';
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "docs – bin2",
 };
 
@@ -18,27 +20,15 @@ export default async function DocsPage() {
         <section className="flex flex-col gap-4">
           <h2 className="font-bold">How bin<sub>2</sub>.io works</h2>
           <p className="text-base-content/60">
-            bin<sub>2</sub>.io exposes two separate endpoints for push and pull traffic.
+            bin<sub>2</sub>.io exposes two separate endpoints for push and
+            pull operations. This reduces costs and improves performance by
+            leveraging a global CDN when using the pull endpoint.
           </p>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="border border-base-200 p-5 flex flex-col gap-2">
-              <p className="text-sm text-base-content/40">Push endpoint</p>
-              <p>bin<sub>2</sub>.io/&lt;registry&gt;</p>
-              <p className="text-base-content/60">
-                Used for <code>docker push</code>, <code>podman push</code>, and ORAS uploads.
-              </p>
-            </div>
-            <div className="border border-base-200 p-5 flex flex-col gap-2">
-              <p className="text-sm text-base-content/40">Pull endpoint</p>
-              <p>pull.bin<sub>2</sub>.io/&lt;registry&gt;</p>
-              <p className="text-base-content/60">
-                Backed by a global CDN. Optimized for fast, low-cost downloads.
-              </p>
-            </div>
-          </div>
+          <Bin2FlowDiagram />
           <p className="text-base-content/60">
-            While you can pull directly from <code>bin2.io</code>, it is slower and incurs higher costs.
-            Use <code>pull.bin2.io</code> in CI, Kubernetes, and production environments.
+            While you can pull directly from <code>bin<sub>2</sub>.io</code>,
+            it is slower and incurs higher costs. Use
+            <code>pull.bin<sub>2</sub>.io</code> where possible.
           </p>
         </section>
 
@@ -79,7 +69,7 @@ export default async function DocsPage() {
             <div className="flex flex-col gap-4 py-6">
               <h3 className="font-bold">Pull Operations</h3>
               <p className="text-base-content/60">Pull costs depend on which endpoint is used.</p>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <div className="border border-base-200 p-4 flex flex-col gap-2">
                   <p className="font-bold">CDN endpoint — pull.bin<sub>2</sub>.io</p>
                   <ul className="text-sm text-base-content/60 flex flex-col gap-1">

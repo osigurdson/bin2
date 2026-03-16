@@ -1,6 +1,7 @@
 import { getSignInUrl, withAuth } from "@workos-inc/authkit-nextjs";
 import { pricing, pricingDisplay } from "@/lib/pricing";
 import MarketingLayout from "@/components/MarketingLayout";
+import Bin2FlowDiagram from "@/components/Bin2FlowDiagram";
 
 export default async function Home() {
   const { user } = await withAuth();
@@ -27,6 +28,7 @@ export default async function Home() {
           right infrastructure. All pull traffic is served by a global, low
           cost / high performance CDN.
         </p>
+        <Bin2FlowDiagram />
       </section>
 
       {/* Pricing */}
@@ -38,7 +40,7 @@ export default async function Home() {
           Docker images / ORAS artifacts consist of one or more layers. Pricing
           is based on layer operations and storage used.
         </p>
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid md:grid-cols-3 gap-6">
           <div className="border border-base-200 p-6">
             <h3 className="text-base font-semibold mb-2">Push ops</h3>
             <div className="text-3xl mb-4">
