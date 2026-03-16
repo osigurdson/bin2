@@ -103,13 +103,13 @@ export default function Bin2FlowDiagram() {
       <div className='relative hidden h-[440px] w-[580px] md:block mx-auto' aria-hidden='true'>
         <svg className='absolute inset-0 h-full w-full' viewBox='0 0 580 440' fill='none'>
           <defs>
-            <marker id='flow-arrow-info' markerWidth='8' markerHeight='8' refX='7' refY='4' orient='auto'>
+            <marker id='flow-arrow-info' markerWidth='8' markerHeight='8' refX='8' refY='4' orient='auto'>
               <path d='M 0 0 L 8 4 L 0 8 z' className={tones.info.fill} />
             </marker>
-            <marker id='flow-arrow-secondary' markerWidth='8' markerHeight='8' refX='7' refY='4' orient='auto'>
+            <marker id='flow-arrow-secondary' markerWidth='8' markerHeight='8' refX='8' refY='4' orient='auto'>
               <path d='M 0 0 L 8 4 L 0 8 z' className={tones.secondary.fill} />
             </marker>
-            <marker id='flow-arrow-success' markerWidth='8' markerHeight='8' refX='7' refY='4' orient='auto'>
+            <marker id='flow-arrow-success' markerWidth='8' markerHeight='8' refX='8' refY='4' orient='auto'>
               <path d='M 0 0 L 8 4 L 0 8 z' className={tones.success.fill} />
             </marker>
           </defs>
@@ -123,13 +123,14 @@ export default function Bin2FlowDiagram() {
             markerEnd='url(#flow-arrow-info)'
             style={{ animation: 'flow-fwd 1.6s linear infinite' }}
           />
-          {/* direct pull: bin2.io → localhost (static) */}
+          {/* direct pull: bin2.io → localhost (static, de-emphasised) */}
           <path
             d='M 370 150 L 175 126'
             className={tones.secondary.stroke}
-            strokeWidth='2'
+            strokeWidth='1.5'
             strokeDasharray='6 4'
             markerEnd='url(#flow-arrow-secondary)'
+            opacity='0.3'
           />
           {/* bin2.io ↔ pull.bin2.io: static dotted connector */}
           <path
@@ -198,7 +199,7 @@ export default function Bin2FlowDiagram() {
         <FlowLabel tone='info' className='absolute left-[255px] top-[70px]'>
           push
         </FlowLabel>
-        <FlowLabel tone='secondary' className='absolute left-[255px] top-[142px]'>
+        <FlowLabel tone='secondary' className='absolute left-[255px] top-[142px] opacity-25'>
           pull
         </FlowLabel>
         <FlowLabel tone='success' className='absolute left-[243px] top-[341px]'>

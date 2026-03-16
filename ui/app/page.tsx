@@ -32,7 +32,7 @@ export default async function Home() {
       </section>
 
       {/* Pricing */}
-      <section id="pricing" className="py-[60px] border-t border-base-200">
+      <section id="pricing" className="py-2 border-t border-base-200">
         <h2 className="text-xs uppercase tracking-[2px] text-base-content/40 mb-8">Pricing</h2>
         <p className="text-base-content/60 mb-8 max-w-[680px]">
           Pay only for what you use. Every account receives {pricingDisplay.freeCredit} of
