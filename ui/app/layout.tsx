@@ -3,6 +3,7 @@ import { Space_Mono } from "next/font/google";
 import { AuthKitProvider } from "@workos-inc/authkit-nextjs/components";
 import { withAuth } from "@workos-inc/authkit-nextjs";
 import "./globals.css";
+import { PostHogProvider } from "@/providers/PostHogProvider";
 
 const spaceMono = Space_Mono({
   subsets: ["latin"],
@@ -31,7 +32,9 @@ export default async function RootLayout({
     <html lang="en" className={`${spaceMono.className} ${spaceMono.variable}`}>
       <body>
         <AuthKitProvider initialAuth={auth}>
-          {children}
+          <PostHogProvider>
+            {children}
+          </PostHogProvider>
         </AuthKitProvider>
       </body>
     </html>
