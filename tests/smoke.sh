@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-REG=bin2.nthesis.ai/test
+REG=bin2.io/test
 
 images=(
 	alpine:3.19
