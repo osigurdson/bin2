@@ -46,7 +46,7 @@ func (s *Server) listTagsHandler(c *gin.Context, repo string) {
 		}
 	}
 
-	tags, err := s.db.ListRepositoryTags(c.Request.Context(), registryID, repoLeaf(repo), limit, c.Query("last"))
+	tags, err := s.registryDB.ListRepositoryTags(c.Request.Context(), registryID, repoLeaf(repo), limit, c.Query("last"))
 	if err != nil {
 		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to list tags")
 		return

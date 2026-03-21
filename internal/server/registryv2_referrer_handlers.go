@@ -26,7 +26,7 @@ func (s *Server) listReferrersHandler(c *gin.Context, repo, digest string) {
 		writeOCIError(c, http.StatusBadRequest, "DIGEST_INVALID", err.Error())
 		return
 	}
-	if s.db == nil {
+	if s.registryDB == nil {
 		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "manifest index unavailable")
 		return
 	}
@@ -47,7 +47,7 @@ func (s *Server) listReferrersHandler(c *gin.Context, repo, digest string) {
 		return
 	}
 
-	records, err := s.db.ListRepositoryManifestRecords(c.Request.Context(), registryID, repoLeaf(repo))
+	records, err := s.registryDB.ListRepositoryManifestRecords(c.Request.Context(), registryID, repoLeaf(repo))
 	if err != nil {
 		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to list referrers")
 		return

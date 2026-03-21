@@ -69,7 +69,7 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 		return
 	}
 
-	tenantID, err := s.db.GetRegistryTenantID(c.Request.Context(), registryID)
+	tenantID, err := s.registryDB.GetRegistryTenantID(c.Request.Context(), registryID)
 	if err != nil {
 		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to resolve tenant")
 		return
@@ -113,7 +113,7 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 	normalizedChildManifestDigests := make([]string, 0, len(childManifestDigests))
 	seenManifestDigests := make(map[string]struct{}, len(childManifestDigests))
 	for _, childManifestDigest := range childManifestDigests {
-		if s.db == nil {
+		if s.registryDB == nil {
 			writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "manifest index unavailable")
 			return
 		}
@@ -126,7 +126,7 @@ func (s *Server) putManifestHandler(c *gin.Context, repo, reference string) {
 		if _, ok := seenManifestDigests[normalizedDigest]; ok {
 			continue
 		}
-		exists, err := s.db.HasManifestDigestInRepository(c.Request.Context(), registryID, repoLeaf(repo), normalizedDigest)
+		exists, err := s.registryDB.HasManifestDigestInRepository(c.Request.Context(), registryID, repoLeaf(repo), normalizedDigest)
 		if err != nil {
 			writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "failed to validate referenced manifest")
 			return
@@ -214,7 +214,7 @@ func (s *Server) deleteManifestHandler(c *gin.Context, repo, reference string) {
 		writeOCIError(c, http.StatusBadRequest, "MANIFEST_INVALID", "invalid manifest reference")
 		return
 	}
-	if s.db == nil {
+	if s.registryDB == nil {
 		writeOCIError(c, http.StatusInternalServerError, "UNKNOWN", "manifest index unavailable")
 		return
 	}
@@ -229,7 +229,7 @@ func (s *Server) deleteManifestHandler(c *gin.Context, repo, reference string) {
 		return
 	}
 
-	tenantID, tenantErr := s.db.GetRegistryTenantID(c.Request.Context(), registryID)
+	tenantID, tenantErr := s.registryDB.GetRegistryTenantID(c.Request.Context(), registryID)
 	if tenantErr != nil {
 		logError(fmt.Errorf("GetRegistryTenantID: %w", tenantErr))
 		tenantID = uuid.Nil
@@ -239,7 +239,7 @@ func (s *Server) deleteManifestHandler(c *gin.Context, repo, reference string) {
 	var deleteErr error
 	if digestHex, err := parseDigest(reference); err == nil {
 		var orphaned []db.DeletedBlobInfo
-		deleted, orphaned, deleteErr = s.db.DeleteManifestByDigestInRepository(
+		deleted, orphaned, deleteErr = s.registryDB.DeleteManifestByDigestInRepository(
 			c.Request.Context(),
 			registryID,
 			tenantID,
@@ -259,7 +259,7 @@ func (s *Server) deleteManifestHandler(c *gin.Context, repo, reference string) {
 			s.emitUsageEvent(c.Request.Context(), tenantID, registryID, nil, blob.Digest, db.MetricStorageBytes, -blob.SizeBytes)
 		}
 	} else {
-		deleted, deleteErr = s.db.DeleteManifestReference(
+		deleted, deleteErr = s.registryDB.DeleteManifestReference(
 			c.Request.Context(),
 			registryID,
 			repoLeaf(repo),
@@ -306,7 +306,7 @@ func (s *Server) loadManifestResponse(c *gin.Context, repo, reference string) ([
 		return nil, "", "", err
 	}
 
-	manifestBytes, contentType, digest, err := s.db.GetManifestByReference(
+	manifestBytes, contentType, digest, err := s.registryDB.GetManifestByReference(
 		c.Request.Context(),
 		registryID,
 		repoLeaf(repo),

@@ -18,13 +18,13 @@ func (s *Server) resolveTenantID(ctx context.Context, auth registryAuthContext, 
 	if err != nil {
 		return
 	}
-	tenantID, err = s.db.GetRegistryTenantID(ctx, registryID)
+	tenantID, err = s.registryDB.GetRegistryTenantID(ctx, registryID)
 	return
 }
 
 // emitUsageEvent inserts a single usage event, logging but not propagating any error.
 func (s *Server) emitUsageEvent(ctx context.Context, tenantID, registryID uuid.UUID, repoID *uuid.UUID, digest, metric string, value int64) {
-	if s.db == nil || tenantID == uuid.Nil {
+	if s.registryDB == nil || tenantID == uuid.Nil {
 		return
 	}
 
@@ -44,31 +44,31 @@ func (s *Server) emitUsageEvent(ctx context.Context, tenantID, registryID uuid.U
 		event.RegistryID = &registryID
 	}
 	event.RepoID = repoID
-	if err := s.db.InsertUsageEvents(ctx, []db.UsageEvent{event}); err != nil {
+	if err := s.registryDB.InsertUsageEvents(ctx, []db.UsageEvent{event}); err != nil {
 		logError(fmt.Errorf("emitUsageEvent %s: %w", metric, err))
 	}
 }
 
 func (s *Server) trackRegistryBlobDigest(ctx context.Context, digest string, sizeBytes int64) error {
-	if s.db == nil {
+	if s.registryDB == nil {
 		return nil
 	}
 	digest = strings.TrimSpace(digest)
 	if digest == "" {
 		return nil
 	}
-	return s.db.UpsertObjectBlob(ctx, digest, sizeBytes)
+	return s.registryDB.UpsertObjectBlob(ctx, digest, sizeBytes)
 }
 
 func (s *Server) trackedRegistryBlobSize(ctx context.Context, digest string) (int64, bool, error) {
-	if s.db == nil {
+	if s.registryDB == nil {
 		return 0, false, nil
 	}
 	digest = strings.TrimSpace(digest)
 	if digest == "" {
 		return 0, false, nil
 	}
-	size, err := s.db.GetObjectSize(ctx, digest)
+	size, err := s.registryDB.GetObjectSize(ctx, digest)
 	if errors.Is(err, db.ErrNotFound) {
 		return 0, false, nil
 	}
@@ -79,13 +79,13 @@ func (s *Server) trackedRegistryBlobSize(ctx context.Context, digest string) (in
 }
 
 func (s *Server) noteObjectExistenceCheck(ctx context.Context, digest string) {
-	if s.db == nil {
+	if s.registryDB == nil {
 		return
 	}
 	if !s.probeCache.shouldUpdate(digest) {
 		return
 	}
-	if err := s.db.NoteObjectExistenceCheck(ctx, digest); err != nil {
+	if err := s.registryDB.NoteObjectExistenceCheck(ctx, digest); err != nil {
 		logError(fmt.Errorf("could not note existence check for %s: %w", digest, err))
 	}
 }
@@ -102,7 +102,7 @@ func (s *Server) indexRegistryManifest(
 	childManifestDigests []string,
 	subjectDigest string,
 ) error {
-	if s.db == nil {
+	if s.registryDB == nil {
 		return nil
 	}
 
@@ -111,7 +111,7 @@ func (s *Server) indexRegistryManifest(
 		objectType = "manifest_index"
 	}
 
-	return s.db.UpsertManifest(ctx, db.UpsertManifestArgs{
+	return s.registryDB.UpsertManifest(ctx, db.UpsertManifestArgs{
 		RegistryID:           registryID,
 		Repository:           strings.TrimSpace(repo),
 		ManifestDigest:       strings.TrimSpace(manifestDigest),
@@ -130,12 +130,16 @@ func (s *Server) resolveRegistryIDForRepo(ctx context.Context, auth registryAuth
 		return auth.registryID, nil
 	}
 
+	if s.registryDB == nil {
+		return uuid.Nil, errUnauthorized
+	}
+
 	namespace := registryNamespace(repo)
 	if namespace == "" {
 		return uuid.Nil, fmt.Errorf("invalid repository namespace")
 	}
 
-	registryRec, err := s.db.GetRegistryByName(ctx, namespace)
+	registryRec, err := s.registryDB.GetRegistryByName(ctx, namespace)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			return uuid.Nil, errUnauthorized

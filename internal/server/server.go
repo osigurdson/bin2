@@ -37,6 +37,7 @@ type Server struct {
 	ctx                   context.Context
 	router                *gin.Engine
 	db                    *db.DB
+	registryDB            registryDatabase
 	registryStorage       registryStorageBackend
 	registryJWTPrivateKey ed25519.PrivateKey
 	registryJWTPublicKey  ed25519.PublicKey
@@ -113,6 +114,7 @@ func New() (*Server, error) {
 		ctx:                   context.Background(),
 		router:                gin.Default(),
 		db:                    conn,
+		registryDB:            conn,
 		registryStorage:       rs,
 		registryJWTPrivateKey: registryJWTPrivateKey,
 		registryJWTPublicKey:  registryJWTPublicKey,

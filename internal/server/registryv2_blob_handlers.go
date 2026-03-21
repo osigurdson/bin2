@@ -223,7 +223,7 @@ func (s *Server) mountBlobHandler(c *gin.Context, repo, mountDigest, fromRepo st
 		// Billing: emit push-op-count if tenant doesn't already own this blob.
 		if auth, authErr := s.getRegistryAuth(c); authErr == nil {
 			if registryID, tenantID, tenantErr := s.resolveTenantID(c.Request.Context(), auth, repo); tenantErr == nil {
-				if has, _ := s.db.TenantHasBlob(c.Request.Context(), tenantID, digest); !has {
+				if has, _ := s.registryDB.TenantHasBlob(c.Request.Context(), tenantID, digest); !has {
 					opCount := int64(1)
 					if size > 0 {
 						opCount = (size + 100*1024*1024 - 1) / (100 * 1024 * 1024)
@@ -279,7 +279,10 @@ func (s *Server) completeBlobUpload(c *gin.Context, repo, uuid, digestHex string
 	// Resolve tenant for billing. Errors are non-fatal for the upload itself.
 	auth, _ := s.getRegistryAuth(c)
 	registryID, tenantID, _ := s.resolveTenantID(c.Request.Context(), auth, repo)
-	tenantHasBlob, _ := s.db.TenantHasBlob(c.Request.Context(), tenantID, digest)
+	var tenantHasBlob bool
+	if s.registryDB != nil {
+		tenantHasBlob, _ = s.registryDB.TenantHasBlob(c.Request.Context(), tenantID, digest)
+	}
 
 	size, exists, err := s.trackedRegistryBlobSize(c.Request.Context(), digest)
 	if err != nil {
@@ -370,7 +373,7 @@ func (s *Server) headBlobHandler(c *gin.Context, repo, digest string) {
 	}
 
 	normalizedDigest := "sha256:" + digestHex
-	size, err := s.db.GetRepositoryObjectSize(c.Request.Context(), registryID, repoLeaf(repo), normalizedDigest)
+	size, err := s.registryDB.GetRepositoryObjectSize(c.Request.Context(), registryID, repoLeaf(repo), normalizedDigest)
 	if errors.Is(err, db.ErrNotFound) {
 		writeOCIError(c, http.StatusNotFound, "BLOB_UNKNOWN", "blob not found")
 		return
