@@ -593,3 +593,468 @@ func TestManifestDelete(t *testing.T) {
 		t.Fatalf("GET after digest delete: status %d, want 404", w.Code)
 	}
 }
+
+// TestBlobUploadStatusCheck verifies GET on an in-progress upload session returns
+// 204 with a Range header showing the current byte offset.
+func TestBlobUploadStatusCheck(t *testing.T) {
+	e := newTestRegistryEnv(t, "alpha")
+	repo := "alpha/statusrepo"
+	tok := e.token(t, repo, "push")
+
+	// Start upload
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/v2/%s/blobs/uploads/", repo), nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w := e.do(req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("POST blobs/uploads: status %d", w.Code)
+	}
+	location := w.Header().Get("Location")
+
+	// GET on the session before any data is sent → 204, Range: 0-0
+	req = httptest.NewRequest(http.MethodGet, location, nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w = e.do(req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("GET upload status (empty): status %d, want 204", w.Code)
+	}
+	if got := w.Header().Get("Range"); got != "0-0" {
+		t.Fatalf("GET upload status (empty): Range = %q, want 0-0", got)
+	}
+
+	// PATCH some data
+	content := []byte("partial data")
+	req = httptest.NewRequest(http.MethodPatch, location, bytes.NewReader(content))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.ContentLength = int64(len(content))
+	w = e.do(req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("PATCH upload: status %d", w.Code)
+	}
+	location = w.Header().Get("Location")
+
+	// GET again → 204, Range reflects bytes received
+	req = httptest.NewRequest(http.MethodGet, location, nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w = e.do(req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("GET upload status (after patch): status %d, want 204", w.Code)
+	}
+	wantRange := fmt.Sprintf("0-%d", len(content)-1)
+	if got := w.Header().Get("Range"); got != wantRange {
+		t.Fatalf("GET upload status (after patch): Range = %q, want %q", got, wantRange)
+	}
+}
+
+// TestBlobUploadOutOfOrderChunk verifies that sending a Content-Range starting
+// at the wrong offset returns 416 Range Not Satisfiable.
+func TestBlobUploadOutOfOrderChunk(t *testing.T) {
+	e := newTestRegistryEnv(t, "alpha")
+	repo := "alpha/rangerepo"
+	tok := e.token(t, repo, "push")
+
+	// Start upload
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/v2/%s/blobs/uploads/", repo), nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w := e.do(req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("POST blobs/uploads: status %d", w.Code)
+	}
+	location := w.Header().Get("Location")
+
+	// PATCH with Content-Range starting at byte 5 but upload is at 0 → 416
+	content := []byte("some content")
+	req = httptest.NewRequest(http.MethodPatch, location, bytes.NewReader(content))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Range", fmt.Sprintf("5-%d", 5+len(content)-1))
+	req.ContentLength = int64(len(content))
+	w = e.do(req)
+	if w.Code != http.StatusRequestedRangeNotSatisfiable {
+		t.Fatalf("out-of-order PATCH: status %d, want 416", w.Code)
+	}
+
+	// The Range header in the response should reflect the actual current offset (0)
+	if got := w.Header().Get("Range"); got != "0-0" {
+		t.Fatalf("out-of-order PATCH: Range = %q, want 0-0", got)
+	}
+}
+
+// TestNamespaceMismatch verifies that requests to a different namespace are
+// rejected. There are two distinct enforcement layers:
+//
+//  1. The Bearer middleware rejects with 401 when the token has no scope for the
+//     target repository (the common case: token scoped to alpha can't reach beta).
+//
+//  2. ensureRepoAuthorized rejects with 403 when the middleware passes because the
+//     token explicitly carries scope for the target repo, but the token's subject
+//     namespace doesn't match the repo's namespace prefix.
+func TestNamespaceMismatch(t *testing.T) {
+	e := newTestRegistryEnv(t, "alpha")
+
+	// Case 1: token scoped to alpha/app, request targets beta/app.
+	// The middleware sees no beta/app scope in the token → 401 DENIED.
+	tok := e.token(t, "alpha/app", "push", "pull")
+
+	req := httptest.NewRequest(http.MethodPost, "/v2/beta/app/blobs/uploads/", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w := e.do(req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("cross-namespace POST (no scope): status %d, want 401", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "DENIED") {
+		t.Fatalf("cross-namespace POST: body %q does not contain DENIED", w.Body.String())
+	}
+
+	// Case 2: token subject is "alpha" but has been issued with beta/app scope
+	// (simulates a crafted or misconfigured token). The middleware passes, but
+	// ensureRepoAuthorized catches the namespace mismatch → 403 DENIED.
+	crossTok, _, _, err := e.server.issueRegistryToken("alpha", "registry.test", []registryTokenAccess{{
+		Type:    "repository",
+		Name:    "beta/app",
+		Actions: []string{"push", "pull"},
+	}})
+	if err != nil {
+		t.Fatalf("issueRegistryToken: %v", err)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/v2/beta/app/blobs/uploads/", nil)
+	req.Header.Set("Authorization", "Bearer "+crossTok)
+	w = e.do(req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("cross-namespace POST (subject mismatch): status %d, want 403", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "DENIED") {
+		t.Fatalf("cross-namespace POST (subject mismatch): body %q does not contain DENIED", w.Body.String())
+	}
+}
+
+// TestDeleteChildOfIndexRejected verifies that deleting a manifest that is still
+// referenced as a child of an image index returns 409 with MANIFEST_REFERENCED.
+func TestDeleteChildOfIndexRejected(t *testing.T) {
+	e := newTestRegistryEnv(t, "alpha")
+	repo := "alpha/indexrepo"
+
+	// Push blobs and child manifest
+	configContent := []byte(`{}`)
+	layerContent := []byte("index child layer")
+	configDigest := e.pushBlob(t, repo, configContent)
+	layerDigest := e.pushBlob(t, repo, layerContent)
+
+	tok := e.token(t, repo, "push", "pull")
+	manifestCT := "application/vnd.oci.image.manifest.v1+json"
+	indexCT := "application/vnd.oci.image.index.v1+json"
+
+	child := imageManifest{
+		SchemaVersion: 2,
+		MediaType:     manifestCT,
+		Config: descriptor{
+			MediaType: "application/vnd.oci.image.config.v1+json",
+			Digest:    configDigest,
+			Size:      int64(len(configContent)),
+		},
+		Layers: []descriptor{{
+			MediaType: "application/vnd.oci.image.layer.v1.tar+gzip",
+			Digest:    layerDigest,
+			Size:      int64(len(layerContent)),
+		}},
+	}
+	childBytes := mustJSON(child)
+	childDigest := "sha256:" + sha256hex(childBytes)
+
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/v2/%s/manifests/child", repo), bytes.NewReader(childBytes))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", manifestCT)
+	req.ContentLength = int64(len(childBytes))
+	w := e.do(req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("push child: status %d, body: %s", w.Code, w.Body.String())
+	}
+
+	// Push an index referencing the child
+	index := imageManifest{
+		SchemaVersion: 2,
+		MediaType:     indexCT,
+		Manifests: []descriptor{{
+			MediaType: manifestCT,
+			Digest:    childDigest,
+			Size:      int64(len(childBytes)),
+		}},
+	}
+	indexBytes := mustJSON(index)
+
+	req = httptest.NewRequest(http.MethodPut, fmt.Sprintf("/v2/%s/manifests/index", repo), bytes.NewReader(indexBytes))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", indexCT)
+	req.ContentLength = int64(len(indexBytes))
+	w = e.do(req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("push index: status %d, body: %s", w.Code, w.Body.String())
+	}
+
+	// Attempt to delete the child while the index still references it → 409
+	req = httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/v2/%s/manifests/%s", repo, childDigest), nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w = e.do(req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("DELETE child while referenced: status %d, want 409", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "MANIFEST_REFERENCED") {
+		t.Fatalf("DELETE child while referenced: body %q does not contain MANIFEST_REFERENCED", w.Body.String())
+	}
+
+	// Deleting the index first should succeed
+	indexDigest := "sha256:" + sha256hex(indexBytes)
+	req = httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/v2/%s/manifests/%s", repo, indexDigest), nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w = e.do(req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("DELETE index: status %d, body: %s", w.Code, w.Body.String())
+	}
+
+	// Now deleting the child should succeed
+	req = httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/v2/%s/manifests/%s", repo, childDigest), nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w = e.do(req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("DELETE child after index deleted: status %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestReferrersEmptyForUnknownDigest verifies that the referrers endpoint returns
+// 200 with an empty manifests array for a digest that has no referrers, as
+// required by the OCI spec.
+func TestReferrersEmptyForUnknownDigest(t *testing.T) {
+	e := newTestRegistryEnv(t, "alpha")
+	repo := "alpha/emptyrefs"
+	tok := e.token(t, repo, "pull")
+
+	// A digest that was never pushed — referrers must still return 200 + empty list
+	ghost := "sha256:" + strings.Repeat("0", 64)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/v2/%s/referrers/%s", repo, ghost), nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w := e.do(req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET referrers for unknown digest: status %d, want 200", w.Code)
+	}
+
+	var idx imageIndex
+	if err := json.Unmarshal(w.Body.Bytes(), &idx); err != nil {
+		t.Fatalf("GET referrers for unknown digest: unmarshal: %v", err)
+	}
+	if len(idx.Manifests) != 0 {
+		t.Fatalf("GET referrers for unknown digest: got %d manifests, want 0", len(idx.Manifests))
+	}
+	if idx.SchemaVersion != 2 {
+		t.Fatalf("GET referrers for unknown digest: schemaVersion = %d, want 2", idx.SchemaVersion)
+	}
+}
+
+// TestBlobSizeTrackedInDB verifies that after a blob is uploaded, the registry
+// DB records its size so that GC tooling can account for storage consumption.
+func TestBlobSizeTrackedInDB(t *testing.T) {
+	e := newTestRegistryEnv(t, "alpha")
+	repo := "alpha/gcrepo"
+	content := []byte("blob for size tracking")
+
+	digest := e.pushBlob(t, repo, content)
+
+	size, err := e.db.GetObjectSize(nil, digest)
+	if err != nil {
+		t.Fatalf("GetObjectSize: %v", err)
+	}
+	if size != int64(len(content)) {
+		t.Fatalf("GetObjectSize: got %d, want %d", size, len(content))
+	}
+}
+
+// TestUsageEventEmittedOnManifestPush verifies that pushing a manifest emits a
+// push-op-count usage event, which drives billing and GC accounting.
+func TestUsageEventEmittedOnManifestPush(t *testing.T) {
+	e := newTestRegistryEnv(t, "alpha")
+	repo := "alpha/eventrepo"
+
+	configDigest := e.pushBlob(t, repo, []byte(`{}`))
+	layerDigest := e.pushBlob(t, repo, []byte("event test layer"))
+
+	// Clear any events emitted during blob uploads so we only inspect the manifest push.
+	e.db.omu.Lock()
+	e.db.events = nil
+	e.db.omu.Unlock()
+
+	tok := e.token(t, repo, "push")
+	manifest := imageManifest{
+		SchemaVersion: 2,
+		MediaType:     "application/vnd.oci.image.manifest.v1+json",
+		Config: descriptor{
+			MediaType: "application/vnd.oci.image.config.v1+json",
+			Digest:    configDigest,
+			Size:      2,
+		},
+		Layers: []descriptor{{
+			MediaType: "application/vnd.oci.image.layer.v1.tar+gzip",
+			Digest:    layerDigest,
+			Size:      int64(len("event test layer")),
+		}},
+	}
+	body := mustJSON(manifest)
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/v2/%s/manifests/v1.0", repo), bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+	req.ContentLength = int64(len(body))
+	w := e.do(req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("PUT manifest: status %d, body: %s", w.Code, w.Body.String())
+	}
+
+	e.db.omu.Lock()
+	captured := append([]capturedEvent(nil), e.db.events...)
+	e.db.omu.Unlock()
+
+	var found bool
+	for _, ev := range captured {
+		if ev.metric == "push-op-count" && ev.value == 1 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("no push-op-count event found; got events: %+v", captured)
+	}
+}
+
+// TestOrphanedBlobAccountingOnDelete verifies that when a manifest is deleted
+// and its blobs are no longer referenced by any other manifest, the server emits
+// negative storage-bytes usage events for each orphaned blob.  A blob shared by
+// a second manifest must NOT be reported as orphaned while that manifest exists.
+func TestOrphanedBlobAccountingOnDelete(t *testing.T) {
+	e := newTestRegistryEnv(t, "alpha")
+	repo := "alpha/orphanrepo"
+
+	sharedLayer := []byte("shared layer content")
+	uniqueLayer := []byte("unique layer content")
+	configA := []byte(`{"a":1}`)
+	configB := []byte(`{"b":2}`)
+
+	sharedDigest := e.pushBlob(t, repo, sharedLayer)
+	uniqueDigest := e.pushBlob(t, repo, uniqueLayer)
+	configADigest := e.pushBlob(t, repo, configA)
+	configBDigest := e.pushBlob(t, repo, configB)
+
+	tok := e.token(t, repo, "push")
+	ct := "application/vnd.oci.image.manifest.v1+json"
+
+	pushManifest := func(tag string, configDigest string, layers []descriptor) string {
+		t.Helper()
+		m := imageManifest{
+			SchemaVersion: 2,
+			MediaType:     ct,
+			Config: descriptor{
+				MediaType: "application/vnd.oci.image.config.v1+json",
+				Digest:    configDigest,
+				Size:      int64(len(configA)), // approximate; size not validated in manifest store
+			},
+			Layers: layers,
+		}
+		body := mustJSON(m)
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/v2/%s/manifests/%s", repo, tag), bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		req.Header.Set("Content-Type", ct)
+		req.ContentLength = int64(len(body))
+		w := e.do(req)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("push manifest %s: status %d, body: %s", tag, w.Code, w.Body.String())
+		}
+		return "sha256:" + sha256hex(body)
+	}
+
+	// Manifest A: sharedLayer + uniqueLayer
+	digestA := pushManifest("v1", configADigest, []descriptor{
+		{MediaType: "application/vnd.oci.image.layer.v1.tar+gzip", Digest: sharedDigest, Size: int64(len(sharedLayer))},
+		{MediaType: "application/vnd.oci.image.layer.v1.tar+gzip", Digest: uniqueDigest, Size: int64(len(uniqueLayer))},
+	})
+	// Manifest B: only sharedLayer
+	digestB := pushManifest("v2", configBDigest, []descriptor{
+		{MediaType: "application/vnd.oci.image.layer.v1.tar+gzip", Digest: sharedDigest, Size: int64(len(sharedLayer))},
+	})
+
+	// Delete manifest A. sharedLayer is still referenced by B → not orphaned.
+	// uniqueLayer and configA are only in A → orphaned.
+	e.db.omu.Lock()
+	e.db.events = nil
+	e.db.omu.Unlock()
+
+	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/v2/%s/manifests/%s", repo, digestA), nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w := e.do(req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("DELETE manifest A: status %d, body: %s", w.Code, w.Body.String())
+	}
+
+	e.db.omu.Lock()
+	eventsAfterA := append([]capturedEvent(nil), e.db.events...)
+	e.db.omu.Unlock()
+
+	// sharedDigest must NOT appear in negative storage-bytes events after deleting A.
+	for _, ev := range eventsAfterA {
+		if ev.metric == "storage-bytes" && ev.value < 0 && ev.digest == sharedDigest {
+			t.Fatalf("DELETE manifest A: shared blob %s incorrectly reported as orphaned", sharedDigest)
+		}
+	}
+	// uniqueLayer and configA MUST appear as orphaned (negative storage-bytes).
+	for _, want := range []string{uniqueDigest, configADigest} {
+		var found bool
+		for _, ev := range eventsAfterA {
+			if ev.metric == "storage-bytes" && ev.value < 0 && ev.digest == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("DELETE manifest A: expected orphaned blob %s to emit negative storage-bytes event; events: %+v", want, eventsAfterA)
+		}
+	}
+
+	// Delete manifest B. sharedLayer is now orphaned.
+	e.db.omu.Lock()
+	e.db.events = nil
+	e.db.omu.Unlock()
+
+	req = httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/v2/%s/manifests/%s", repo, digestB), nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w = e.do(req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("DELETE manifest B: status %d, body: %s", w.Code, w.Body.String())
+	}
+
+	e.db.omu.Lock()
+	eventsAfterB := append([]capturedEvent(nil), e.db.events...)
+	e.db.omu.Unlock()
+
+	var foundShared bool
+	for _, ev := range eventsAfterB {
+		if ev.metric == "storage-bytes" && ev.value < 0 && ev.digest == sharedDigest {
+			foundShared = true
+			break
+		}
+	}
+	if !foundShared {
+		t.Fatalf("DELETE manifest B: shared blob %s should now be orphaned; events: %+v", sharedDigest, eventsAfterB)
+	}
+}
+
+// TestProbeCache verifies the debounce logic: the first call to shouldUpdate
+// for a digest returns true; a second call within 30 s returns false.
+func TestProbeCache(t *testing.T) {
+	pc := &probeCache{recent: make(map[string]time.Time)}
+	const digest = "sha256:" + "a1b2c3"
+
+	if !pc.shouldUpdate(digest) {
+		t.Fatal("first shouldUpdate: expected true")
+	}
+	if pc.shouldUpdate(digest) {
+		t.Fatal("second shouldUpdate (within debounce): expected false")
+	}
+	// A different digest is independent.
+	if !pc.shouldUpdate("sha256:other") {
+		t.Fatal("different digest: expected true")
+	}
+}

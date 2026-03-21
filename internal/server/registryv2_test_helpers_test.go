@@ -15,6 +15,13 @@ import (
 	"github.com/google/uuid"
 )
 
+// capturedEvent is a single usage event recorded by memDB.
+type capturedEvent struct {
+	metric string
+	value  int64
+	digest string
+}
+
 // --------------------------------------------------------------------------
 // In-memory registry storage backend
 // --------------------------------------------------------------------------
@@ -146,22 +153,28 @@ type memDB struct {
 	rmu        sync.Mutex
 	registries map[string]db.Registry // name → Registry
 
-	omu        sync.Mutex
-	blobs      map[string]int64  // digest → size
-	repoObjs   map[string]bool   // repoObjKey → present
-	manifests  map[string]memManifestEntry // manifestKey → entry
-	tags       map[string]string // tagKey → digest
+	omu           sync.Mutex
+	blobs         map[string]int64          // digest → size
+	repoObjs      map[string]bool           // repoObjKey → present
+	manifests     map[string]memManifestEntry // manifestKey → entry
+	manifestBlobs map[string][]string       // manifestKey → []blobDigest
+	tags          map[string]string         // tagKey → digest
+	// graph: "registryID\x00repo\x00parentDigest\x00childDigest" → true
+	graph  map[string]bool
+	events []capturedEvent // captured InsertUsageEvents calls
 }
 
 func newMemDB(registryName string, tenantID uuid.UUID) *memDB {
 	registryID := uuid.New()
 	m := &memDB{
-		mu:         tenantID,
-		registries: make(map[string]db.Registry),
-		blobs:      make(map[string]int64),
-		repoObjs:   make(map[string]bool),
-		manifests:  make(map[string]memManifestEntry),
-		tags:       make(map[string]string),
+		mu:            tenantID,
+		registries:    make(map[string]db.Registry),
+		blobs:         make(map[string]int64),
+		repoObjs:      make(map[string]bool),
+		manifests:     make(map[string]memManifestEntry),
+		manifestBlobs: make(map[string][]string),
+		tags:          make(map[string]string),
+		graph:         make(map[string]bool),
 	}
 	m.registries[registryName] = db.Registry{
 		ID:       registryID,
@@ -238,7 +251,16 @@ func (m *memDB) NoteObjectExistenceCheck(_ context.Context, _ string) error {
 	return nil
 }
 
-func (m *memDB) InsertUsageEvents(_ context.Context, _ []db.UsageEvent) error {
+func (m *memDB) InsertUsageEvents(_ context.Context, events []db.UsageEvent) error {
+	m.omu.Lock()
+	defer m.omu.Unlock()
+	for _, e := range events {
+		m.events = append(m.events, capturedEvent{
+			metric: e.Metric,
+			value:  e.Value,
+			digest: e.Digest,
+		})
+	}
 	return nil
 }
 
@@ -258,6 +280,19 @@ func (m *memDB) UpsertManifest(_ context.Context, args db.UpsertManifestArgs) er
 	m.repoObjs[m.rk(args.RegistryID, args.Repository, args.ManifestDigest)] = true
 	for _, bd := range args.BlobDigests {
 		m.repoObjs[m.rk(args.RegistryID, args.Repository, bd)] = true
+	}
+
+	// Record which blobs belong to this manifest (for orphan detection on delete)
+	if len(args.BlobDigests) > 0 {
+		cp := make([]string, len(args.BlobDigests))
+		copy(cp, args.BlobDigests)
+		m.manifestBlobs[mkey] = cp
+	}
+
+	// Record parent→child edges for manifest indexes
+	for _, child := range args.ChildManifestDigests {
+		key := fmt.Sprintf("%s\x00%s\x00%s\x00%s", args.RegistryID, args.Repository, args.ManifestDigest, child)
+		m.graph[key] = true
 	}
 
 	// Update tag
@@ -300,17 +335,63 @@ func (m *memDB) DeleteManifestByDigestInRepository(_ context.Context, registryID
 	if _, ok := m.manifests[mkey]; !ok {
 		return false, nil, nil
 	}
+
+	// Check if any still-present manifest in the repo references this as a child.
+	repoPrefix := fmt.Sprintf("%s\x00%s\x00", registryID, repository)
+	childSuffix := "\x00" + manifestDigest
+	for edge := range m.graph {
+		if !strings.HasPrefix(edge, repoPrefix) {
+			continue
+		}
+		if !strings.HasSuffix(edge, childSuffix) {
+			continue
+		}
+		// Extract parent digest: "registryID\x00repo\x00parent\x00child"
+		rest := strings.TrimPrefix(edge, repoPrefix)
+		parentDigest := strings.TrimSuffix(rest, childSuffix)
+		if m.repoObjs[m.rk(registryID, repository, parentDigest)] {
+			return false, nil, db.ErrManifestHasParent
+		}
+	}
+
+	// Collect blobs referenced by this manifest before deleting.
+	blobsForManifest := m.manifestBlobs[mkey]
+
 	delete(m.manifests, mkey)
 	delete(m.repoObjs, mkey)
+	delete(m.manifestBlobs, mkey)
 
 	// Remove any tags pointing to this digest
-	prefix := fmt.Sprintf("%s\x00%s\x00", registryID, repository)
 	for tk, td := range m.tags {
-		if strings.HasPrefix(tk, prefix) && td == manifestDigest {
+		if strings.HasPrefix(tk, repoPrefix) && td == manifestDigest {
 			delete(m.tags, tk)
 		}
 	}
-	return true, nil, nil
+
+	// Compute tenant-level orphans: blobs no longer referenced by any remaining
+	// manifest in this registry instance.
+	var orphaned []db.DeletedBlobInfo
+	for _, blobDigest := range blobsForManifest {
+		referenced := false
+		for _, blobs := range m.manifestBlobs {
+			for _, bd := range blobs {
+				if bd == blobDigest {
+					referenced = true
+					break
+				}
+			}
+			if referenced {
+				break
+			}
+		}
+		if !referenced {
+			orphaned = append(orphaned, db.DeletedBlobInfo{
+				Digest:    blobDigest,
+				SizeBytes: m.blobs[blobDigest],
+			})
+		}
+	}
+	return true, orphaned, nil
 }
 
 func (m *memDB) DeleteManifestReference(_ context.Context, registryID uuid.UUID, repository, reference string) (bool, error) {
