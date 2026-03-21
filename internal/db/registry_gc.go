@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -516,10 +517,11 @@ func (d *DB) DeleteManifestByDigestInRepository(
 	return true, orphaned, nil
 }
 
-func (d *DB) ListUnreferencedObjectDigests(ctx context.Context, limit int) ([]string, error) {
+func (d *DB) ListUnreferencedObjectDigests(ctx context.Context, limit int, minAge time.Duration) ([]string, error) {
 	if limit <= 0 {
 		limit = 100
 	}
+	cutoff := time.Now().Add(-minAge)
 	const cmd = `WITH RECURSIVE reachable AS (
 		SELECT DISTINCT digest FROM tags
 		UNION
@@ -531,10 +533,10 @@ func (d *DB) ListUnreferencedObjectDigests(ctx context.Context, limit int) ([]st
 	FROM objects o
 	LEFT JOIN reachable r ON r.digest = o.digest
 	WHERE r.digest IS NULL
-	  AND o.created_at < NOW() - INTERVAL '24 hours'
-	  AND (o.existence_checked_at IS NULL OR o.existence_checked_at < NOW() - INTERVAL '24 hours')
+	  AND o.created_at < $2
+	  AND (o.existence_checked_at IS NULL OR o.existence_checked_at < $2)
 	LIMIT $1`
-	rows, err := d.conn.Query(ctx, cmd, limit)
+	rows, err := d.conn.Query(ctx, cmd, limit, cutoff)
 	if err != nil {
 		return nil, err
 	}
@@ -555,6 +557,58 @@ func (d *DB) DeleteObject(ctx context.Context, digest string) error {
 	const cmd = `DELETE FROM objects WHERE digest = $1`
 	_, err := d.conn.Exec(ctx, cmd, strings.TrimSpace(digest))
 	return err
+}
+
+// GCDiagnostics holds counts useful for understanding why GC collected 0 objects.
+type GCDiagnostics struct {
+	TotalObjects      int
+	ReachableObjects  int
+	UnreachableObjects int
+	EligibleObjects   int // unreachable AND older than minAge
+}
+
+// DiagnoseGC returns object counts at each stage of the GC filter pipeline.
+func (d *DB) DiagnoseGC(ctx context.Context, minAge time.Duration) (GCDiagnostics, error) {
+	cutoff := time.Now().Add(-minAge)
+
+	var diag GCDiagnostics
+
+	if err := d.conn.QueryRow(ctx, `SELECT COUNT(*) FROM objects`).Scan(&diag.TotalObjects); err != nil {
+		return diag, fmt.Errorf("count objects: %w", err)
+	}
+
+	const reachableCmd = `WITH RECURSIVE reachable AS (
+		SELECT DISTINCT digest FROM tags
+		UNION
+		SELECT g.child_digest
+		FROM graph g
+		JOIN reachable r ON r.digest = g.parent_digest
+	)
+	SELECT COUNT(*) FROM reachable`
+	if err := d.conn.QueryRow(ctx, reachableCmd).Scan(&diag.ReachableObjects); err != nil {
+		return diag, fmt.Errorf("count reachable: %w", err)
+	}
+
+	diag.UnreachableObjects = diag.TotalObjects - diag.ReachableObjects
+
+	const eligibleCmd = `WITH RECURSIVE reachable AS (
+		SELECT DISTINCT digest FROM tags
+		UNION
+		SELECT g.child_digest
+		FROM graph g
+		JOIN reachable r ON r.digest = g.parent_digest
+	)
+	SELECT COUNT(*)
+	FROM objects o
+	LEFT JOIN reachable r ON r.digest = o.digest
+	WHERE r.digest IS NULL
+	  AND o.created_at < $1
+	  AND (o.existence_checked_at IS NULL OR o.existence_checked_at < $1)`
+	if err := d.conn.QueryRow(ctx, eligibleCmd, cutoff).Scan(&diag.EligibleObjects); err != nil {
+		return diag, fmt.Errorf("count eligible: %w", err)
+	}
+
+	return diag, nil
 }
 
 func dedupeNonEmpty(values []string) []string {

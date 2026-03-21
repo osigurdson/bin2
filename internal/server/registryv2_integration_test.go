@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1056,5 +1057,536 @@ func TestProbeCache(t *testing.T) {
 	// A different digest is independent.
 	if !pc.shouldUpdate("sha256:other") {
 		t.Fatal("different digest: expected true")
+	}
+}
+
+// TestManifestPushByDigest verifies that PUT /v2/<repo>/manifests/<digest>
+// stores the manifest without creating a tag, and that it is retrievable by
+// digest but not by a tag reference.
+func TestManifestPushByDigest(t *testing.T) {
+	e := newTestRegistryEnv(t, "alpha")
+	repo := "alpha/digestpush"
+
+	configDigest := e.pushBlob(t, repo, []byte(`{}`))
+	layerDigest := e.pushBlob(t, repo, []byte("digest push layer"))
+
+	manifest := imageManifest{
+		SchemaVersion: 2,
+		MediaType:     "application/vnd.oci.image.manifest.v1+json",
+		Config: descriptor{
+			MediaType: "application/vnd.oci.image.config.v1+json",
+			Digest:    configDigest,
+			Size:      2,
+		},
+		Layers: []descriptor{{
+			MediaType: "application/vnd.oci.image.layer.v1.tar+gzip",
+			Digest:    layerDigest,
+			Size:      int64(len("digest push layer")),
+		}},
+	}
+	body := mustJSON(manifest)
+	digestRef := "sha256:" + sha256hex(body)
+
+	tok := e.token(t, repo, "push", "pull")
+	ct := "application/vnd.oci.image.manifest.v1+json"
+
+	// PUT directly to the digest reference (no tag).
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/v2/%s/manifests/%s", repo, digestRef), bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", ct)
+	req.ContentLength = int64(len(body))
+	w := e.do(req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("PUT manifest by digest: status %d, body: %s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Docker-Content-Digest"); got != digestRef {
+		t.Fatalf("Docker-Content-Digest = %q, want %q", got, digestRef)
+	}
+
+	// GET by digest must succeed.
+	req = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/v2/%s/manifests/%s", repo, digestRef), nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w = e.do(req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET manifest by digest: status %d", w.Code)
+	}
+	if !bytes.Equal(w.Body.Bytes(), body) {
+		t.Fatal("GET manifest by digest: body mismatch")
+	}
+
+	// No tag should have been created — tag list must be empty.
+	req = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/v2/%s/tags/list", repo), nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w = e.do(req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("tags/list: status %d", w.Code)
+	}
+	var resp tagListResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("tags/list: unmarshal: %v", err)
+	}
+	if len(resp.Tags) != 0 {
+		t.Fatalf("tags/list: expected no tags after push-by-digest, got %v", resp.Tags)
+	}
+}
+
+// TestBlobUploadUnknownUUID verifies that PATCH and PUT against an upload
+// session UUID that was never started return 404 BLOB_UPLOAD_UNKNOWN.
+func TestBlobUploadUnknownUUID(t *testing.T) {
+	e := newTestRegistryEnv(t, "alpha")
+	repo := "alpha/unknownuuid"
+	tok := e.token(t, repo, "push")
+
+	fakeUUID := "00000000-0000-0000-0000-000000000000"
+	uploadPath := fmt.Sprintf("/v2/%s/blobs/uploads/%s", repo, fakeUUID)
+
+	// PATCH against unknown session.
+	req := httptest.NewRequest(http.MethodPatch, uploadPath, bytes.NewReader([]byte("data")))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.ContentLength = 4
+	w := e.do(req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("PATCH unknown UUID: status %d, want 404", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "BLOB_UPLOAD_UNKNOWN") {
+		t.Fatalf("PATCH unknown UUID: body %q does not contain BLOB_UPLOAD_UNKNOWN", w.Body.String())
+	}
+
+	// PUT (finalize) against unknown session.
+	digestStr := "sha256:" + strings.Repeat("a", 64)
+	req = httptest.NewRequest(http.MethodPut, uploadPath+"?digest="+digestStr, http.NoBody)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w = e.do(req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("PUT unknown UUID: status %d, want 404", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "BLOB_UPLOAD_UNKNOWN") {
+		t.Fatalf("PUT unknown UUID: body %q does not contain BLOB_UPLOAD_UNKNOWN", w.Body.String())
+	}
+}
+
+// TestReferrerChain verifies that GET /referrers/<digest> returns only direct
+// referrers, not transitive ones.  Given A ← B ← C (C refers to B which refers
+// to A), listing referrers of A should include B but not C.
+func TestReferrerChain(t *testing.T) {
+	e := newTestRegistryEnv(t, "alpha")
+	repo := "alpha/refchain"
+
+	configDigest := e.pushBlob(t, repo, []byte(`{}`))
+	layerDigest := e.pushBlob(t, repo, []byte("chain layer"))
+
+	tok := e.token(t, repo, "push", "pull")
+	ct := "application/vnd.oci.image.manifest.v1+json"
+
+	pushManifest := func(tag string, subject *descriptor, artifactType string) ([]byte, string) {
+		t.Helper()
+		m := imageManifest{
+			SchemaVersion: 2,
+			MediaType:     ct,
+			ArtifactType:  artifactType,
+			Config: descriptor{
+				MediaType: "application/vnd.oci.image.config.v1+json",
+				Digest:    configDigest,
+				Size:      2,
+			},
+			Layers: []descriptor{{
+				MediaType: "application/vnd.oci.image.layer.v1.tar+gzip",
+				Digest:    layerDigest,
+				Size:      int64(len("chain layer")),
+			}},
+			Subject: subject,
+		}
+		body := mustJSON(m)
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/v2/%s/manifests/%s", repo, tag), bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		req.Header.Set("Content-Type", ct)
+		req.ContentLength = int64(len(body))
+		w := e.do(req)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("push manifest %s: status %d, body: %s", tag, w.Code, w.Body.String())
+		}
+		return body, "sha256:" + sha256hex(body)
+	}
+
+	// A — the root subject.
+	aBody, aDigest := pushManifest("a", nil, "")
+
+	// B — refers to A.
+	_, bDigest := pushManifest("b", &descriptor{
+		MediaType: ct,
+		Digest:    aDigest,
+		Size:      int64(len(aBody)),
+	}, "application/vnd.example.attestation")
+
+	// C — refers to B (not A).
+	bBody := mustJSON(imageManifest{
+		SchemaVersion: 2, MediaType: ct, ArtifactType: "application/vnd.example.attestation",
+		Config:  descriptor{MediaType: "application/vnd.oci.image.config.v1+json", Digest: configDigest, Size: 2},
+		Layers:  []descriptor{{MediaType: "application/vnd.oci.image.layer.v1.tar+gzip", Digest: layerDigest, Size: int64(len("chain layer"))}},
+		Subject: &descriptor{MediaType: ct, Digest: aDigest, Size: int64(len(aBody))},
+	})
+	pushManifest("c", &descriptor{
+		MediaType: ct,
+		Digest:    bDigest,
+		Size:      int64(len(bBody)),
+	}, "application/vnd.example.provenance")
+
+	// GET referrers of A — should contain B only, not C.
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/v2/%s/referrers/%s", repo, aDigest), nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w := e.do(req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET referrers of A: status %d", w.Code)
+	}
+	var idx imageIndex
+	if err := json.Unmarshal(w.Body.Bytes(), &idx); err != nil {
+		t.Fatalf("GET referrers of A: unmarshal: %v", err)
+	}
+	if len(idx.Manifests) != 1 {
+		t.Fatalf("GET referrers of A: got %d manifests, want 1 (B only); digests: %v",
+			len(idx.Manifests), func() []string {
+				out := make([]string, len(idx.Manifests))
+				for i, m := range idx.Manifests {
+					out[i] = m.Digest
+				}
+				return out
+			}())
+	}
+	if idx.Manifests[0].Digest != bDigest {
+		t.Fatalf("GET referrers of A: got %s, want B (%s)", idx.Manifests[0].Digest, bDigest)
+	}
+}
+
+// TestManifestDeleteNotFound verifies that deleting a manifest digest that was
+// never pushed returns 404, not an internal error.
+func TestManifestDeleteNotFound(t *testing.T) {
+	e := newTestRegistryEnv(t, "alpha")
+	repo := "alpha/dne"
+	tok := e.token(t, repo, "push")
+
+	ghost := "sha256:" + strings.Repeat("0", 64)
+	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/v2/%s/manifests/%s", repo, ghost), nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w := e.do(req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("DELETE non-existent manifest: status %d, want 404", w.Code)
+	}
+}
+
+// TestTagReassignment verifies that pushing a different manifest to an existing
+// tag updates the tag to point to the new manifest, while the old manifest
+// remains reachable by digest.
+func TestTagReassignment(t *testing.T) {
+	e := newTestRegistryEnv(t, "alpha")
+	repo := "alpha/reassign"
+	tok := e.token(t, repo, "push", "pull")
+	ct := "application/vnd.oci.image.manifest.v1+json"
+
+	configDigest := e.pushBlob(t, repo, []byte(`{}`))
+	layerA := e.pushBlob(t, repo, []byte("layer for manifest A"))
+	layerB := e.pushBlob(t, repo, []byte("layer for manifest B"))
+
+	pushManifest := func(layerDigest string) ([]byte, string) {
+		t.Helper()
+		m := imageManifest{
+			SchemaVersion: 2,
+			MediaType:     ct,
+			Config:        descriptor{MediaType: "application/vnd.oci.image.config.v1+json", Digest: configDigest, Size: 2},
+			Layers:        []descriptor{{MediaType: "application/vnd.oci.image.layer.v1.tar+gzip", Digest: layerDigest, Size: 20}},
+		}
+		body := mustJSON(m)
+		return body, "sha256:" + sha256hex(body)
+	}
+
+	bodyA, digestA := pushManifest(layerA)
+	bodyB, digestB := pushManifest(layerB)
+
+	// Push A to "latest".
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/v2/%s/manifests/latest", repo), bytes.NewReader(bodyA))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", ct)
+	req.ContentLength = int64(len(bodyA))
+	w := e.do(req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("push A: status %d, body: %s", w.Code, w.Body.String())
+	}
+
+	// Reassign "latest" to B.
+	req = httptest.NewRequest(http.MethodPut, fmt.Sprintf("/v2/%s/manifests/latest", repo), bytes.NewReader(bodyB))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", ct)
+	req.ContentLength = int64(len(bodyB))
+	w = e.do(req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("push B: status %d, body: %s", w.Code, w.Body.String())
+	}
+
+	// "latest" must now resolve to B.
+	req = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/v2/%s/manifests/latest", repo), nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w = e.do(req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET latest: status %d", w.Code)
+	}
+	if got := w.Header().Get("Docker-Content-Digest"); got != digestB {
+		t.Fatalf("GET latest: digest = %q, want B (%s)", got, digestB)
+	}
+
+	// A must still be reachable by its digest.
+	req = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/v2/%s/manifests/%s", repo, digestA), nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w = e.do(req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET A by digest: status %d", w.Code)
+	}
+	if !bytes.Equal(w.Body.Bytes(), bodyA) {
+		t.Fatal("GET A by digest: body mismatch")
+	}
+}
+
+// TestManifestDoubleDelete verifies that deleting the same manifest digest
+// twice returns 202 on the first delete and 404 on the second (idempotent).
+func TestManifestDoubleDelete(t *testing.T) {
+	e := newTestRegistryEnv(t, "alpha")
+	repo := "alpha/doubledelete"
+	tok := e.token(t, repo, "push")
+	ct := "application/vnd.oci.image.manifest.v1+json"
+
+	configDigest := e.pushBlob(t, repo, []byte(`{}`))
+	layerDigest := e.pushBlob(t, repo, []byte("layer"))
+
+	m := imageManifest{
+		SchemaVersion: 2, MediaType: ct,
+		Config: descriptor{MediaType: "application/vnd.oci.image.config.v1+json", Digest: configDigest, Size: 2},
+		Layers: []descriptor{{MediaType: "application/vnd.oci.image.layer.v1.tar+gzip", Digest: layerDigest, Size: 5}},
+	}
+	body := mustJSON(m)
+	digest := "sha256:" + sha256hex(body)
+
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/v2/%s/manifests/v1.0", repo), bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", ct)
+	req.ContentLength = int64(len(body))
+	w := e.do(req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("push: status %d", w.Code)
+	}
+
+	del := func() int {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/v2/%s/manifests/%s", repo, digest), nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		return e.do(req).Code
+	}
+
+	if code := del(); code != http.StatusAccepted {
+		t.Fatalf("first DELETE: status %d, want 202", code)
+	}
+	if code := del(); code != http.StatusNotFound {
+		t.Fatalf("second DELETE: status %d, want 404", code)
+	}
+}
+
+// TestManifestContentTypeFromHeader verifies that the Content-Type header on
+// PUT governs the stored media type, regardless of the "mediaType" field inside
+// the JSON body.  On GET the server must echo back the header value, not the
+// JSON body field.
+func TestManifestContentTypeFromHeader(t *testing.T) {
+	e := newTestRegistryEnv(t, "alpha")
+	repo := "alpha/ctrepo"
+	tok := e.token(t, repo, "push", "pull")
+
+	configDigest := e.pushBlob(t, repo, []byte(`{}`))
+	layerDigest := e.pushBlob(t, repo, []byte("ct layer"))
+
+	// JSON body declares OCI media type, but header says Docker schema2.
+	dockerCT := "application/vnd.docker.distribution.manifest.v2+json"
+	m := imageManifest{
+		SchemaVersion: 2,
+		MediaType:     "application/vnd.oci.image.manifest.v1+json", // intentionally mismatched
+		Config:        descriptor{MediaType: "application/vnd.oci.image.config.v1+json", Digest: configDigest, Size: 2},
+		Layers:        []descriptor{{MediaType: "application/vnd.oci.image.layer.v1.tar+gzip", Digest: layerDigest, Size: 8}},
+	}
+	body := mustJSON(m)
+	digest := "sha256:" + sha256hex(body)
+
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/v2/%s/manifests/v1.0", repo), bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", dockerCT)
+	req.ContentLength = int64(len(body))
+	w := e.do(req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("PUT manifest: status %d, body: %s", w.Code, w.Body.String())
+	}
+
+	// GET by digest — Content-Type in response must match the PUT header, not JSON field.
+	req = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/v2/%s/manifests/%s", repo, digest), nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w = e.do(req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET manifest: status %d", w.Code)
+	}
+	got := w.Header().Get("Content-Type")
+	if got != dockerCT {
+		t.Fatalf("Content-Type = %q, want %q (header must take precedence over JSON mediaType field)", got, dockerCT)
+	}
+}
+
+// TestOCIIndexNoMediaTypeField verifies that an OCI image index whose JSON body
+// omits the "mediaType" field is accepted, as permitted by the OCI spec.
+// The Content-Type header is the authoritative type signal.
+func TestOCIIndexNoMediaTypeField(t *testing.T) {
+	e := newTestRegistryEnv(t, "alpha")
+	repo := "alpha/nomediatype"
+	tok := e.token(t, repo, "push", "pull")
+
+	// Push a child manifest first.
+	configDigest := e.pushBlob(t, repo, []byte(`{}`))
+	layerDigest := e.pushBlob(t, repo, []byte("nomediatype layer"))
+	child := imageManifest{
+		SchemaVersion: 2,
+		MediaType:     "application/vnd.oci.image.manifest.v1+json",
+		Config:        descriptor{MediaType: "application/vnd.oci.image.config.v1+json", Digest: configDigest, Size: 2},
+		Layers:        []descriptor{{MediaType: "application/vnd.oci.image.layer.v1.tar+gzip", Digest: layerDigest, Size: 17}},
+	}
+	childBody := mustJSON(child)
+	childDigest := "sha256:" + sha256hex(childBody)
+
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/v2/%s/manifests/child", repo), bytes.NewReader(childBody))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+	req.ContentLength = int64(len(childBody))
+	w := e.do(req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("push child: status %d, body: %s", w.Code, w.Body.String())
+	}
+
+	// Build an index JSON without the "mediaType" field by marshalling a struct
+	// that omits it, then push with the OCI index Content-Type.
+	type bareIndex struct {
+		SchemaVersion int          `json:"schemaVersion"`
+		Manifests     []descriptor `json:"manifests"`
+	}
+	indexBody := mustJSON(bareIndex{
+		SchemaVersion: 2,
+		Manifests: []descriptor{{
+			MediaType: "application/vnd.oci.image.manifest.v1+json",
+			Digest:    childDigest,
+			Size:      int64(len(childBody)),
+		}},
+	})
+	indexCT := "application/vnd.oci.image.index.v1+json"
+
+	req = httptest.NewRequest(http.MethodPut, fmt.Sprintf("/v2/%s/manifests/index", repo), bytes.NewReader(indexBody))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", indexCT)
+	req.ContentLength = int64(len(indexBody))
+	w = e.do(req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("PUT index without mediaType field: status %d, body: %s", w.Code, w.Body.String())
+	}
+
+	// GET must return the index with the correct Content-Type from the PUT header.
+	indexDigest := "sha256:" + sha256hex(indexBody)
+	req = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/v2/%s/manifests/%s", repo, indexDigest), nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w = e.do(req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET index: status %d", w.Code)
+	}
+	if got := w.Header().Get("Content-Type"); got != indexCT {
+		t.Fatalf("GET index: Content-Type = %q, want %q", got, indexCT)
+	}
+}
+
+// TestTagListEmptyArray verifies that a repository with no tags returns an
+// empty JSON array ("tags":[]) rather than a null field, as required by the
+// OCI Distribution Spec.
+func TestTagListEmptyArray(t *testing.T) {
+	e := newTestRegistryEnv(t, "alpha")
+	repo := "alpha/notags"
+	tok := e.token(t, repo, "pull")
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/v2/%s/tags/list", repo), nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w := e.do(req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("tags/list: status %d", w.Code)
+	}
+
+	// Unmarshal as raw map so we can distinguish [] from null.
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	tagsField, ok := raw["tags"]
+	if !ok {
+		t.Fatal("tags/list: response missing 'tags' field")
+	}
+	if string(tagsField) == "null" {
+		t.Fatal("tags/list: 'tags' field is null, want []")
+	}
+	var tags []string
+	if err := json.Unmarshal(tagsField, &tags); err != nil {
+		t.Fatalf("tags/list: tags field is not an array: %v", err)
+	}
+	if len(tags) != 0 {
+		t.Fatalf("tags/list: expected empty array, got %v", tags)
+	}
+}
+
+// TestManifestPushParallelIdempotent verifies that two goroutines pushing the
+// same manifest digest to the same tag simultaneously both receive 201 with the
+// same Docker-Content-Digest.  Tests for TOCTOU bugs in the upsert path.
+func TestManifestPushParallelIdempotent(t *testing.T) {
+	e := newTestRegistryEnv(t, "alpha")
+	repo := "alpha/parallel"
+	tok := e.token(t, repo, "push", "pull")
+	ct := "application/vnd.oci.image.manifest.v1+json"
+
+	configDigest := e.pushBlob(t, repo, []byte(`{}`))
+	layerDigest := e.pushBlob(t, repo, []byte("parallel layer"))
+
+	m := imageManifest{
+		SchemaVersion: 2, MediaType: ct,
+		Config: descriptor{MediaType: "application/vnd.oci.image.config.v1+json", Digest: configDigest, Size: 2},
+		Layers: []descriptor{{MediaType: "application/vnd.oci.image.layer.v1.tar+gzip", Digest: layerDigest, Size: 14}},
+	}
+	body := mustJSON(m)
+	wantDigest := "sha256:" + sha256hex(body)
+
+	const workers = 8
+	type result struct {
+		code   int
+		digest string
+	}
+	results := make([]result, workers)
+	var wg sync.WaitGroup
+	// ready gates all goroutines to start at the same time.
+	ready := make(chan struct{})
+
+	for i := range workers {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			<-ready
+			req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/v2/%s/manifests/latest", repo), bytes.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+tok)
+			req.Header.Set("Content-Type", ct)
+			req.ContentLength = int64(len(body))
+			w := e.do(req)
+			results[idx] = result{code: w.Code, digest: w.Header().Get("Docker-Content-Digest")}
+		}(i)
+	}
+	close(ready)
+	wg.Wait()
+
+	for i, r := range results {
+		if r.code != http.StatusCreated {
+			t.Errorf("worker %d: status %d, want 201", i, r.code)
+		}
+		if r.digest != wantDigest {
+			t.Errorf("worker %d: digest = %q, want %q", i, r.digest, wantDigest)
+		}
 	}
 }

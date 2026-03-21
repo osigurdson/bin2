@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-REG=bin2.io/test
+REG=localhost:5000/test
 
 images=(
 	alpine:3.19

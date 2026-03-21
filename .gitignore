@@ -25,6 +25,7 @@ coverage.out
 # Local compiled binaries
 cmd/init/init
 cmd/api/api
+cmd/cleanup/cleanup
 *.exe
 *.dll
 *.so
