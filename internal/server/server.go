@@ -37,7 +37,7 @@ type Server struct {
 	ctx                   context.Context
 	router                *gin.Engine
 	db                    *db.DB
-	registryStorage       *r2RegistryStorage
+	registryStorage       registryStorageBackend
 	registryJWTPrivateKey ed25519.PrivateKey
 	registryJWTPublicKey  ed25519.PublicKey
 	registryService       string

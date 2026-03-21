@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,6 +12,19 @@ import (
 	"path"
 	"strings"
 )
+
+type registryStorageBackend interface {
+	BlobExists(ctx context.Context, digestHex string) (bool, error)
+	BlobSize(ctx context.Context, digestHex string) (int64, error)
+	GetBlob(ctx context.Context, digestHex string) (io.ReadCloser, int64, error)
+	DeleteBlob(ctx context.Context, digestHex string) error
+	CreateUpload(ctx context.Context, id string) error
+	AppendUpload(ctx context.Context, id string, body io.Reader) (int64, error)
+	UploadSize(ctx context.Context, id string) (int64, error)
+	UploadSHA256(ctx context.Context, id string) (string, error)
+	StoreBlobFromUpload(ctx context.Context, id string, digestHex string) (int64, error)
+	DeleteUpload(ctx context.Context, id string) error
+}
 
 var (
 	ErrUploadNotFound   = errors.New("upload not found")
